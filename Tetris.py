@@ -1,88 +1,91 @@
-#Program Name: Tetris.py
-#Program Purpose: Tetris built in Python for eventual use with a DNQ
-#Programmer: Connor Thompson
-#Date-Written: 1/3/17
+# Program Name: Tetris.py
+# Program Purpose: Tetris built in Python for eventual use with a DNQ
+# Programmer: Connor Thompson
+# Date-Written: 1/3/17
 
 import pygame
 import sys
 import random
 from pygame.locals import *
-from pygame.font import *
+import numpy
+
+score = 0
+level = 1 #Start on level 1
 
 class Piece:
-    O = (((0,0,0,0,0), (0,0,0,0,0), (0,0,1,1,0), (0,0,1,1,0), (0,0,0,0,0)),) * 4 #Square Tetromino
+    O = (((0, 0, 0, 0, 0),  (0, 0, 0, 0, 0),  (0, 0, 1,1,0),  (0, 0, 1,1,0),  (0, 0, 0, 0, 0)), ) * 4  # Square Tetromino
 
-    I = (((0,0,0,0,0),(0,0,0,0,0),(0,1,1,1,1),(0,0,0,0,0),(0,0,0,0,0)), #Straight Tetromino
-         ((0,0,0,0,0),(0,0,1,0,0),(0,0,1,0,0),(0,0,1,0,0),(0,0,1,0,0)), # [][][][]
-         ((0,0,0,0,0),(0,0,0,0,0),(1,1,1,1,0),(0,0,0,0,0),(0,0,0,0,0)),
-         ((0,0,1,0,0),(0,0,1,0,0),(0,0,1,0,0),(0,0,1,0,0),(0,0,0,0,0)))
+    I = (((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1,1,1,1), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)),   # Straight Tetromino
+         ((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0)),   # [][][][]
+         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (1,1,1,1,0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)), 
+         ((0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)))
 
-    L = (((0,0,0,0,0),(0,0,1,0,0),(0,0,1,0,0),(0,0,1,1,0),(0,0,0,0,0)), #L-shaped Tetromino [][][]
-         ((0,0,0,0,0),(0,0,0,0,0),(0,1,1,1,0),(0,1,0,0,0),(0,0,0,0,0)), #                   []
-         ((0,0,0,0,0),(0,1,1,0,0),(0,0,1,0,0),(0,0,1,0,0),(0,0,0,0,0)),
-         ((0,0,0,0,0),(0,0,0,1,0),(0,1,1,1,0),(0,0,0,0,0),(0,0,0,0,0)))
+    L = (((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 1,1,0), (0, 0, 0, 0, 0)),   # L-shaped Tetromino [][][]
+         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1,1,1,0), (0, 1,0, 0, 0), (0, 0, 0, 0, 0)),   #                   []
+         ((0, 0, 0, 0, 0), (0, 1,1,0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)), 
+         ((0, 0, 0, 0, 0), (0, 0, 0, 1,0), (0, 1,1,1,0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)))
 
-    J = (((0,0,0,0,0),(0,0,1,0,0),(0,0,1,0,0),(0,1,1,0,0),(0,0,0,0,0)), #Opposite of L Tetromino []
-         ((0,0,0,0,0),(0,1,0,0,0),(0,1,1,1,0),(0,0,0,0,0),(0,0,0,0,0)), #                    [][][]
-         ((0,0,0,0,0),(0,0,1,1,0),(0,0,1,0,0),(0,0,1,0,0),(0,0,0,0,0)),
-         ((0,0,0,0,0),(0,0,0,0,0),(0,1,1,1,0),(0,0,0,1,0),(0,0,0,0,0)))
+    J = (((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 1,1,0, 0), (0, 0, 0, 0, 0)),   # Opposite of L Tetromino []
+         ((0, 0, 0, 0, 0), (0, 1,0, 0, 0), (0, 1,1,1,0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)),   #                    [][][]
+         ((0, 0, 0, 0, 0), (0, 0, 1,1,0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)), 
+         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1,1,1,0), (0, 0, 0, 1,0), (0, 0, 0, 0, 0)))
 
-    Z = (((0,0,0,0,0),(0,0,0,1,0),(0,0,1,1,0),(0,0,1,0,0),(0,0,0,0,0)), #Z-shaped Tetromino [][]
-         ((0,0,0,0,0),(0,0,0,0,0),(0,1,1,0,0),(0,0,1,1,0),(0,0,0,0,0)), #                     [][]
-         ((0,0,0,0,0),(0,0,1,0,0),(0,1,1,0,0),(0,1,0,0,0),(0,0,0,0,0)),
-         ((0,0,0,0,0),(0,1,1,0,0),(0,0,1,1,0),(0,0,0,0,0),(0,0,0,0,0)))
+    Z = (((0, 0, 0, 0, 0), (0, 0, 0, 1,0), (0, 0, 1,1,0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)),   # Z-shaped Tetromino [][]
+         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1,1,0, 0), (0, 0, 1,1,0), (0, 0, 0, 0, 0)),   #                     [][]
+         ((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 1,1,0, 0), (0, 1,0, 0, 0), (0, 0, 0, 0, 0)), 
+         ((0, 0, 0, 0, 0), (0, 1,1,0, 0), (0, 0, 1,1,0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)))
 
-    S = (((0,0,0,0,0),(0,0,1,0,0),(0,0,1,1,0),(0,0,0,1,0),(0,0,0,0,0)), #S-shaped Tetromino [][]
-         ((0,0,0,0,0),(0,0,0,0,0),(0,0,1,1,0),(0,1,1,0,0),(0,0,0,0,0)), #                 [][]
-         ((0,0,0,0,0),(0,1,0,0,0),(0,1,1,0,0),(0,0,1,0,0),(0,0,0,0,0)),
-         ((0,0,0,0,0),(0,0,1,1,0),(0,1,1,0,0),(0,0,0,0,0),(0,0,0,0,0)))
+    S = (((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 0, 1,1,0), (0, 0, 0, 1,0), (0, 0, 0, 0, 0)),   # S-shaped Tetromino [][]
+         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 0, 1,1,0), (0, 1,1,0, 0), (0, 0, 0, 0, 0)),   #                 [][]
+         ((0, 0, 0, 0, 0), (0, 1,0, 0, 0), (0, 1,1,0, 0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)), 
+         ((0, 0, 0, 0, 0), (0, 0, 1,1,0), (0, 1,1,0, 0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)))
 
-    T = (((0,0,0,0,0),(0,0,1,0,0),(0,0,1,1,0),(0,0,1,0,0),(0,0,0,0,0)), #T-shaped Tetromino [][][]
-         ((0,0,0,0,0),(0,0,0,0,0),(0,1,1,1,0),(0,0,1,0,0),(0,0,0,0,0)), #                     []
-         ((0,0,0,0,0),(0,0,1,0,0),(0,1,1,0,0),(0,0,1,0,0),(0,0,0,0,0)),
-         ((0,0,0,0,0),(0,0,1,0,0),(0,1,1,1,0),(0,0,0,0,0),(0,0,0,0,0)))
+    T = (((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 0, 1,1,0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)),   # T-shaped Tetromino [][][]
+         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1,1,1,0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)),   #                     []
+         ((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 1,1,0, 0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)), 
+         ((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 1,1,1,0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)))
 
-    PIECES = {'O': O, 'I':I, 'L':L, 'J':J, 'Z':Z, 'S':S, 'T':T} #Create a dictionary to hold Pieces
+    PIECES = {'O': O, 'I':I, 'L':L, 'J':J, 'Z':Z, 'S':S, 'T':T}  # Create a dictionary to hold Pieces
 
     def __init__(self, piece_name=None):
         if piece_name:
             self.piece_name = piece_name
         else:
-            self.piece_name = random.choice(Piece.PIECES.keys()) #If no "first piece" then randomly select from keys in PIECES dictionary
+            self.piece_name = random.choice(Piece.PIECES.keys())  # If no "first piece" then randomly select from keys in PIECES dictionary
         self.rotation = 0
-        self.array2d = Piece.PIECES[self.piece_name][self.rotation] #In array2d save the chosen Tetromino with the set rotation
+        self.array2d = Piece.PIECES[self.piece_name][self.rotation]  # In array2d save the chosen Tetromino with the set rotation
 
     def __iter__(self):
         for row in self.array2d:
-            yield row #Yield is the same as return but it returns a generator instead of an iterative
+            yield row   # Yield is the same as return but it returns a generator instead of an iterative
 
     def rotate(self, clockwise=True):
         self.rotation = (self.rotation + 1) % 4 if clockwise else \
-            (self.rotation - 1) % 4 #Add 1 for clockwise, subtract 1 for counterclockwise
+            (self.rotation - 1) % 4   # Add 1 for clockwise, subtract 1 for counterclockwise
         self.array2d = Piece.PIECES[self.piece_name][self.rotation]
 
 class Board:
-    COLLIDE_ERROR = {'no_error': 0, 'right_wall':1, 'left_wall': 2, 'bottom':3, 'overlap':4} #Dictionary for storing what kind of collision occurred
+    COLLIDE_ERROR = {'no_error': 0,  'right_wall': 1, 'left_wall': 2, 'bottom': 3, 'overlap': 4}  # Dictionary for storing what kind of collision occurred
 
     def generate_piece(self):
-        self.piece = Piece() #Set first piece to random piece per the Piece Class init function
-        self.piece_x, self.piece_y = 3, 0 #Set to center
-
+        global level
+        self.piece = Piece()   # Set first piece to random piece per the Piece Class init function
+        self.piece_x, self.piece_y = 3, 0   # Set to center
 
         print(self.piece.piece_name)
 
-    def __init__(self, screen):
-        self.screen = screen
-        self.width = 10 #Width of game board
-        self.height = 22 #Height of game board
-        self.block_size = 25 #"Block Size" of grid squares in pixels
+    def __init__(self, surface):
+        self.surface = surface
+        self.width = 10   # Width of game board
+        self.height = 22   # Height of game board
+        self.block_size = 25   # "Block Size" of grid squares in pixels
         self.board = []
-        for x in xrange(self.height): #For all "points" on board, set to 0
+        for x in xrange(self.height):   # For all "points" on board, set to 0
             self.board.append([0] * self.width)
-        self.generate_piece() #Generate first piece
+        self.generate_piece()   # Generate first piece
 
     def absorb_piece(self):
-        for y, row in enumerate(self.piece): #For all rows
+        for y, row in enumerate(self.piece):  # For all rows
             for x, block in enumerate(row):
                 if block:
                     self.board[y+self.piece_y][x+self.piece_x] = block
@@ -143,11 +146,11 @@ class Board:
             self.piece_y += dy
 
     def _can_drop_piece(self):
-        return self._can_move_piece(dx=0, dy=1)
+        return self._can_move_piece(dx=0,  dy=1)
 
     def drop_piece(self):
         if self._can_drop_piece():
-            self.move_piece(dx=0, dy=1)
+            self.move_piece(dx=0,  dy=1)
         else:
             self.absorb_piece()
             self.delete_lines()
@@ -159,18 +162,62 @@ class Board:
         return self.block_size* x, self.block_size*(y-2)
 
     def _delete_line(self, y):
-        for y in reversed(xrange(1, y+1)):
+        for y in reversed(xrange(1, y+1)):  # Start by clearing top row first
             self.board[y] = list(self.board[y-1])
 
     def delete_lines(self):
         remove = [y for y, row in enumerate(self.board) if all(row)]
+        tempScore = len(remove)
+        if tempScore > 0:  # Only update score if there's a reason to
+            self.score(tempScore)
         for y in remove:
             self._delete_line(y)
+
+    def score(self, scoreToAdd):
+        # Might have to change scores later on. With these scores, the agent should play to clear the most lines at the highest level
+        global score
+        global level
+        print("Score to Add: " + str(scoreToAdd))
+        if scoreToAdd == 1:
+            scoreToAdd = 50 * level
+        elif scoreToAdd == 2:
+            scoreToAdd = 150 * level
+        elif scoreToAdd == 3:
+            scoreToAdd = 250 * level
+        elif scoreToAdd == 4:
+            scoreToAdd = 350 * level
+        else:
+            print("ELSE")
+        score += scoreToAdd
+        font = pygame.font.Font("/System/Library/Fonts/Helvetica.dfont", 24)
+        white = (255, 255, 255)
+        black = (0, 0, 0)
+        label = font.render("Score: " + str(score),  1, white, black)
+        self.surface.blit(label, (0,  530))
+        print(score)
+        self.levelUp()  # Every time score is updated see if we level up
+
+
+
+    def levelUp(self):
+        global level
+        global score
+        scoreThreshold = 1000 * level
+        if score >= scoreThreshold and level < 10:  # Increment score if pass the scorethreshold and under level 10
+            level += 1
+            print("Level Up!")
+            font = pygame.font.Font("/System/Library/Fonts/Helvetica.dfont", 24)
+            white = (255, 255, 255)
+            black = (0, 0, 0)
+            levelLabel = font.render("Level: " + str(level), 1, white, black)
+            self.surface.blit(levelLabel, (0, 500))
+
+
 
     def game_over(self):
         return sum(self.board[0]) > 0 or sum(self.board[1]) > 0
 
-    def draw_blocks(self, array2d, color=(0,0,255), dx=0, dy=0):
+    def draw_blocks(self, array2d, color=(0, 0, 255),  dx=0,  dy=0):
         for y, row in enumerate(array2d):
             y += dy
             if y >= 2 and y < self.height:
@@ -178,21 +225,21 @@ class Board:
                     if block:
                         x += dx
                         x_pix, y_pix = self.pos_to_pixel(x, y)
-                        # draw block
-                        pygame.draw.rect(self.screen, color,
+                         # draw block
+                        pygame.draw.rect(self.surface, color,
                                          (  x_pix, y_pix,
                                             self.block_size,
                                             self.block_size))
-                        # draw border
-                        pygame.draw.rect(self.screen, (0, 0, 0),
+                         # draw border
+                        pygame.draw.rect(self.surface, (0,  0,  0), 
                                          (  x_pix, y_pix,
                                             self.block_size,
-                                            self.block_size), 1)
+                                            self.block_size),  1)
 
     def draw(self):
 
-        self.draw_blocks(self.piece, dx=self.piece_x, dy=self.piece_y) #Draws the piece
-        self.draw_blocks(self.board) #Redraws the whole board
+        self.draw_blocks(self.piece, dx=self.piece_x, dy=self.piece_y)  # Draws the piece
+        self.draw_blocks(self.board)  # Redraws the whole board
 
     def full_drop_piece(self):
         while self._can_drop_piece():
@@ -203,17 +250,18 @@ class Tetris:
     DROP_EVENT = USEREVENT + 1
 
     def __init__(self):
-        self.screen = pygame.display.set_mode((250, 500)) #Set dimensions of game window
+        self.surface = pygame.display.set_mode((250,  550))  # Set dimensions of game window. Creates a Surface
         self.clock = pygame.time.Clock()
-        self.board = Board(self.screen)
+        self.board = Board(self.surface)
+
 
     def handle_key(self, event_key):
         if event_key == K_DOWN:
             self.board.drop_piece()
         elif event_key == K_LEFT:
-            self.board.move_piece(dx=-1, dy=0) #Subtract 1 from x to move left
+            self.board.move_piece(dx=-1, dy=0)  # Subtract 1 from x to move left
         elif event_key == K_RIGHT:
-            self.board.move_piece(dx=1, dy=0) #Add 1 to x to move right
+            self.board.move_piece(dx=1, dy=0)  # Add 1 to x to move right
         elif event_key == K_UP:
             self.board.rotate_piece()
         elif event_key == K_SPACE:
@@ -229,16 +277,27 @@ class Tetris:
                     running = False
 
     def run(self):
+        global level
+        global score
         pygame.init()
-        pygame.time.set_timer(Tetris.DROP_EVENT, 500)
-        pygame.display.set_caption("Tetris V1.0") #Set window title
+        pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
+        pygame.display.set_caption("Tetris V1.1")  # Set window title
+        font = pygame.font.Font("/System/Library/Fonts/Helvetica.dfont", 24)
+        white = (255, 255, 255)
+        black = (0, 0, 0)
+        label = font.render("Score: " + str(score),  1, white)
+        self.surface.blit(label, (0,  530))
+        levelLabel = font.render("Level: " + str(level), 1, white, black)
+        self.surface.blit(levelLabel, (0, 500))
 
-        while True:
+        while True:  # Gameloop
             if self.board.game_over():
                 print "Game Over"
+                print("Time: " + str(pygame.time.get_ticks() / 1000))   # Returns game time in seconds
                 pygame.quit()
                 sys.exit()
-            self.screen.fill((0,0,0))
+            rect = (0, 0, 250, 500)
+            self.surface.fill((0, 0, 0), rect)
             for event in pygame.event.get():
                 if event.type == QUIT:
                     pygame.quit()
@@ -250,12 +309,32 @@ class Tetris:
 
             self.board.draw()
             pygame.display.update()
-            self.clock.tick(60) #Set game speed
+            self.exportFrame()
+            self.clock.tick(60)  # Set game speed
+
+    def exportFrame(self):
+
+        frame = pygame.surfarray.pixels3d(self.surface) #Where there is a piece, says [0 0 255]
+        #print(frame)
 
 if __name__ == "__main__":
     Tetris().run()
 
-#Implement scoring
-#Preprocessing function
-#Speed up overtime
-#Different Piece Color - Doesn't work because the board gets redrawn all the time
+"""
+def prepro(I):
+   # prepro 210x160x3 uint8 frame into 6400 (80x80) 1D float vector
+  I = I[35:195]  # crop image to start at row 35 and end at row 195
+  I = I[::2,::2,0]  # downsample image by factor of 2
+  I[I == 144] = 0  # erase background where the pixel value is 144
+  I[I == 109] = 0  # erase background where the pixel value is 109
+  I[I != 0] = 1  # everything else (paddles, ball) just set to 1
+  return I.astype(np.float).ravel()  # Returns a float vector with the new values of I
+  """
+
+# Implement scoring  - time? - DONE
+# Preprocessing function - Almost done
+# Speed up overtime - DONE
+# Different Piece Color - Doesn't work because the board gets redrawn all the time
+# Total game time - Done
+# Level and Score Labels - Done
+# Pep8 - Done
