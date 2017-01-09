@@ -319,22 +319,3 @@ class Tetris:
 
 if __name__ == "__main__":
     Tetris().run()
-
-"""
-def prepro(I):
-   # prepro 210x160x3 uint8 frame into 6400 (80x80) 1D float vector
-  I = I[35:195]  # crop image to start at row 35 and end at row 195
-  I = I[::2,::2,0]  # downsample image by factor of 2
-  I[I == 144] = 0  # erase background where the pixel value is 144
-  I[I == 109] = 0  # erase background where the pixel value is 109
-  I[I != 0] = 1  # everything else (paddles, ball) just set to 1
-  return I.astype(np.float).ravel()  # Returns a float vector with the new values of I
-  """
-
-# Implement scoring  - time? - DONE
-# Preprocessing function - Almost done
-# Speed up overtime - DONE
-# Different Piece Color - Doesn't work because the board gets redrawn all the time
-# Total game time - Done
-# Level and Score Labels - Done
-# Pep8 - Done
