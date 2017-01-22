@@ -1,57 +1,68 @@
 # Program Name: Tetris.py
 # Program Purpose: Tetris built in Python for eventual use with a DNQ
-# Programmer: Connor Thompson
-# Date-Written: 1/3/17
+# Date Started: 1/3/17
+# Last Modified: 1/21/17
+# Programmer: Connor
+
+import os
+
+#  This sets the starting position for the pygame Window. It's set to the top-left corner because that is where
+#  Pyscreenshot sets its bounding box.
+x = 0
+y = 0
+os.environ['SDL_VIDEO_WINDOW_POS'] = "%d, %d" % (x, y)
 
 import pygame
 import sys
 import random
 from pygame.locals import *
 import numpy
+import pyscreenshot as ImageGrab
 
 score = 0
-level = 1 #Start on level 1
+level = 1  # Start on level 1
+
 
 class Piece:
-    O = (((0, 0, 0, 0, 0),  (0, 0, 0, 0, 0),  (0, 0, 1,1,0),  (0, 0, 1,1,0),  (0, 0, 0, 0, 0)), ) * 4  # Square Tetromino
+    O = (((0, 0, 0, 0, 0),  (0, 0, 0, 0, 0),  (0, 0, 1, 1, 0),  (0, 0, 1, 1, 0),  (0, 0, 0, 0, 0)), ) * 4  # Square Tetromino
 
-    I = (((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1,1,1,1), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)),   # Straight Tetromino
-         ((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0)),   # [][][][]
-         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (1,1,1,1,0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)), 
-         ((0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)))
+    I = (((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1, 1, 1, 1), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)),   # Straight Tetromino
+         ((0, 0, 0, 0, 0), (0, 0, 1, 0, 0), (0, 0, 1, 0, 0), (0, 0, 1, 0, 0), (0, 0, 1, 0, 0)),   # [][][][]
+         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (1, 1, 1, 1, 0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)),
+         ((0, 0, 1, 0, 0), (0, 0, 1, 0, 0), (0, 0, 1, 0, 0), (0, 0, 1, 0, 0), (0, 0, 0, 0, 0)))
 
-    L = (((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 1,1,0), (0, 0, 0, 0, 0)),   # L-shaped Tetromino [][][]
-         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1,1,1,0), (0, 1,0, 0, 0), (0, 0, 0, 0, 0)),   #                   []
-         ((0, 0, 0, 0, 0), (0, 1,1,0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)), 
-         ((0, 0, 0, 0, 0), (0, 0, 0, 1,0), (0, 1,1,1,0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)))
+    L = (((0, 0, 0, 0, 0), (0, 0, 1, 0, 0), (0, 0, 1, 0, 0), (0, 0, 1, 1, 0), (0, 0, 0, 0, 0)),   # L-shaped Tetromino [][][]
+         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1, 1, 1, 0), (0, 1, 0, 0, 0), (0, 0, 0, 0, 0)),   #                   []
+         ((0, 0, 0, 0, 0), (0, 1, 1, 0, 0), (0, 0, 1, 0, 0), (0, 0, 1, 0, 0), (0, 0, 0, 0, 0)),
+         ((0, 0, 0, 0, 0), (0, 0, 0, 1, 0), (0, 1, 1, 1, 0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)))
 
-    J = (((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 1,1,0, 0), (0, 0, 0, 0, 0)),   # Opposite of L Tetromino []
-         ((0, 0, 0, 0, 0), (0, 1,0, 0, 0), (0, 1,1,1,0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)),   #                    [][][]
-         ((0, 0, 0, 0, 0), (0, 0, 1,1,0), (0, 0, 1,0, 0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)), 
-         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1,1,1,0), (0, 0, 0, 1,0), (0, 0, 0, 0, 0)))
+    J = (((0, 0, 0, 0, 0), (0, 0, 1, 0, 0), (0, 0, 1, 0, 0), (0, 1, 1, 0, 0), (0, 0, 0, 0, 0)),   # Opposite of L Tetromino []
+         ((0, 0, 0, 0, 0), (0, 1, 0, 0, 0), (0, 1, 1, 1, 0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)),   #                    [][][]
+         ((0, 0, 0, 0, 0), (0, 0, 1, 1, 0), (0, 0, 1, 0, 0), (0, 0, 1, 0, 0), (0, 0, 0, 0, 0)),
+         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1, 1, 1, 0), (0, 0, 0, 1, 0), (0, 0, 0, 0, 0)))
 
-    Z = (((0, 0, 0, 0, 0), (0, 0, 0, 1,0), (0, 0, 1,1,0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)),   # Z-shaped Tetromino [][]
-         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1,1,0, 0), (0, 0, 1,1,0), (0, 0, 0, 0, 0)),   #                     [][]
-         ((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 1,1,0, 0), (0, 1,0, 0, 0), (0, 0, 0, 0, 0)), 
-         ((0, 0, 0, 0, 0), (0, 1,1,0, 0), (0, 0, 1,1,0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)))
+    Z = (((0, 0, 0, 0, 0), (0, 0, 0, 1, 0), (0, 0, 1, 1, 0), (0, 0, 1, 0, 0), (0, 0, 0, 0, 0)),   # Z-shaped Tetromino [][]
+         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1, 1, 0, 0), (0, 0, 1, 1, 0), (0, 0, 0, 0, 0)),   #                     [][]
+         ((0, 0, 0, 0, 0), (0, 0, 1, 0, 0), (0, 1, 1, 0, 0), (0, 1, 0, 0, 0), (0, 0, 0, 0, 0)),
+         ((0, 0, 0, 0, 0), (0, 1, 1, 0, 0), (0, 0, 1, 1, 0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)))
 
-    S = (((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 0, 1,1,0), (0, 0, 0, 1,0), (0, 0, 0, 0, 0)),   # S-shaped Tetromino [][]
-         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 0, 1,1,0), (0, 1,1,0, 0), (0, 0, 0, 0, 0)),   #                 [][]
-         ((0, 0, 0, 0, 0), (0, 1,0, 0, 0), (0, 1,1,0, 0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)), 
-         ((0, 0, 0, 0, 0), (0, 0, 1,1,0), (0, 1,1,0, 0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)))
+    S = (((0, 0, 0, 0, 0), (0, 0, 1, 0, 0), (0, 0, 1, 1, 0), (0, 0, 0, 1, 0), (0, 0, 0, 0, 0)),   # S-shaped Tetromino [][]
+         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 0, 1, 1, 0), (0, 1, 1, 0, 0), (0, 0, 0, 0, 0)),   #                 [][]
+         ((0, 0, 0, 0, 0), (0, 1, 0, 0, 0), (0, 1, 1, 0, 0), (0, 0, 1, 0, 0), (0, 0, 0, 0, 0)),
+         ((0, 0, 0, 0, 0), (0, 0, 1, 1, 0), (0, 1, 1, 0, 0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)))
 
-    T = (((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 0, 1,1,0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)),   # T-shaped Tetromino [][][]
-         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1,1,1,0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)),   #                     []
-         ((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 1,1,0, 0), (0, 0, 1,0, 0), (0, 0, 0, 0, 0)), 
-         ((0, 0, 0, 0, 0), (0, 0, 1,0, 0), (0, 1,1,1,0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)))
+    T = (((0, 0, 0, 0, 0), (0, 0, 1, 0, 0), (0, 0, 1, 1, 0), (0, 0, 1, 0, 0), (0, 0, 0, 0, 0)),   # T-shaped Tetromino [][][]
+         ((0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1, 1, 1, 0), (0, 0, 1, 0, 0), (0, 0, 0, 0, 0)),   #                     []
+         ((0, 0, 0, 0, 0), (0, 0, 1, 0, 0), (0, 1, 1, 0, 0), (0, 0, 1, 0, 0), (0, 0, 0, 0, 0)),
+         ((0, 0, 0, 0, 0), (0, 0, 1, 0, 0), (0, 1, 1, 1, 0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)))
 
-    PIECES = {'O': O, 'I':I, 'L':L, 'J':J, 'Z':Z, 'S':S, 'T':T}  # Create a dictionary to hold Pieces
+    PIECES = {'O': O, 'I': I, 'L': L, 'J': J, 'Z': Z, 'S': S, 'T': T}  # Create a dictionary to hold Pieces
 
     def __init__(self, piece_name=None):
         if piece_name:
             self.piece_name = piece_name
         else:
-            self.piece_name = random.choice(Piece.PIECES.keys())  # If no "first piece" then randomly select from keys in PIECES dictionary
+            self.piece_name = random.choice(list(Piece.PIECES.keys()))  # If no "first piece" then randomly select from a list of the keys in PIECES dictionary
         self.rotation = 0
         self.array2d = Piece.PIECES[self.piece_name][self.rotation]  # In array2d save the chosen Tetromino with the set rotation
 
@@ -80,7 +91,7 @@ class Board:
         self.height = 22   # Height of game board
         self.block_size = 25   # "Block Size" of grid squares in pixels
         self.board = []
-        for x in xrange(self.height):   # For all "points" on board, set to 0
+        for x in range(self.height):   # For all "points" on board, set to 0
             self.board.append([0] * self.width)
         self.generate_piece()   # Generate first piece
 
@@ -149,6 +160,7 @@ class Board:
         return self._can_move_piece(dx=0,  dy=1)
 
     def drop_piece(self):
+        Tetris.exportFrame(self)  # This will create a new "screenshot" of the game every time the pieces drop
         if self._can_drop_piece():
             self.move_piece(dx=0,  dy=1)
         else:
@@ -162,7 +174,7 @@ class Board:
         return self.block_size* x, self.block_size*(y-2)
 
     def _delete_line(self, y):
-        for y in reversed(xrange(1, y+1)):  # Start by clearing top row first
+        for y in reversed(range(1, y+1)):  # Start by clearing top row first
             self.board[y] = list(self.board[y-1])
 
     def delete_lines(self):
@@ -231,7 +243,7 @@ class Board:
                                             self.block_size,
                                             self.block_size))
                          # draw border
-                        pygame.draw.rect(self.surface, (0,  0,  0), 
+                        pygame.draw.rect(self.surface, (0,  0,  0),
                                          (  x_pix, y_pix,
                                             self.block_size,
                                             self.block_size),  1)
@@ -248,11 +260,14 @@ class Board:
 
 class Tetris:
     DROP_EVENT = USEREVENT + 1
+    save = False
+    show = False
 
     def __init__(self):
         self.surface = pygame.display.set_mode((250,  550))  # Set dimensions of game window. Creates a Surface
         self.clock = pygame.time.Clock()
         self.board = Board(self.surface)
+        self.exportFrame()
 
 
     def handle_key(self, event_key):
@@ -281,7 +296,7 @@ class Tetris:
         global score
         pygame.init()
         pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
-        pygame.display.set_caption("Tetris V1.1")  # Set window title
+        pygame.display.set_caption("Tetris V1.2")  # Set window title
         font = pygame.font.Font("/System/Library/Fonts/Helvetica.dfont", 24)
         white = (255, 255, 255)
         black = (0, 0, 0)
@@ -292,7 +307,7 @@ class Tetris:
 
         while True:  # Gameloop
             if self.board.game_over():
-                print "Game Over"
+                print("Game Over")
                 print("Time: " + str(pygame.time.get_ticks() / 1000))   # Returns game time in seconds
                 pygame.quit()
                 sys.exit()
@@ -309,13 +324,20 @@ class Tetris:
 
             self.board.draw()
             pygame.display.update()
-            self.exportFrame()
             self.clock.tick(60)  # Set game speed
 
     def exportFrame(self):
-
-        frame = pygame.surfarray.pixels3d(self.surface) #Where there is a piece, says [0 0 255]
-        #print(frame)
+        #  Gets called every time the screen is updated (when a piece drops)
+        img = ImageGrab.grab(bbox=(pygame.Surface.get_bounding_rect(self.surface)))  # Screenshots the Tetris game window
+        img = img.crop(box=(0, 45, 250, 547))  # Gets rid of the title bar on top of the menu. Speeds up processing.
+        img = img.convert(mode='L')  # Convert to 8-bit black and white
+        if Tetris.show:
+            img.show()
+        if Tetris.save:
+            img.save("test" + (str(random.randint(0, 10000)) + ".png"), format='png')
+        #frame = list(img.getdata())  # Similar to numpy.asarray. Returns all pixel data as a List.
+        frame = numpy.asarray(img)  # Creates a list with all pixel values in order. This will be exported to the ML agent.
+        print(frame)
 
 if __name__ == "__main__":
     Tetris().run()
