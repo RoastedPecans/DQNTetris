@@ -5,13 +5,6 @@
 # Programmer: Connor
 
 import os
-
-#  This sets the starting position for the pygame Window. It's set to the top-left corner because that is where
-#  Pyscreenshot sets its bounding box.
-x = 0
-y = 0
-os.environ['SDL_VIDEO_WINDOW_POS'] = "%d, %d" % (x, y)
-
 import pygame
 import sys
 import random
@@ -19,8 +12,16 @@ from pygame.locals import *
 import numpy
 import pyscreenshot as ImageGrab
 
+#  This sets the starting position for the pygame Window. It's set to the top-left corner because that is where
+#  Pyscreenshot sets its bounding box.
+x = 0
+y = 0
+os.environ['SDL_VIDEO_WINDOW_POS'] = "%d, %d" % (x, y)
+
+# Global Variables
 score = 0
 level = 1  # Start on level 1
+frameName = 0
 
 
 class Piece:
@@ -260,7 +261,7 @@ class Board:
 
 class Tetris:
     DROP_EVENT = USEREVENT + 1
-    save = False
+    save = True
     show = False
 
     def __init__(self):
@@ -328,13 +329,15 @@ class Tetris:
 
     def exportFrame(self):
         #  Gets called every time the screen is updated (when a piece drops)
-        img = ImageGrab.grab(bbox=(pygame.Surface.get_bounding_rect(self.surface)))  # Screenshots the Tetris game window
-        img = img.crop(box=(0, 45, 250, 547))  # Gets rid of the title bar on top of the menu. Speeds up processing.
+        global frameName
+        img = ImageGrab.grab(bbox=(0, 45, 250, 547))  # Screenshots the Tetris game window without the text at the bottom
         img = img.convert(mode='L')  # Convert to 8-bit black and white
-        if Tetris.show:
+        if Tetris.show:  # Set flag to show images as they are created
             img.show()
-        if Tetris.save:
-            img.save("test" + (str(random.randint(0, 10000)) + ".png"), format='png')
+        if Tetris.save:  # Set flag to save images to project directory with a random name
+            fileName = "test" + str(frameName) + ".png"  # Create sequential fileName to save image
+            img.save(fileName, format='png')
+            frameName += 1
         #frame = list(img.getdata())  # Similar to numpy.asarray. Returns all pixel data as a List.
         frame = numpy.asarray(img)  # Creates a list with all pixel values in order. This will be exported to the ML agent.
         print(frame)
