@@ -1,7 +1,7 @@
 # Program Name: Tetris.py
 # Program Purpose: Tetris built in Python for eventual use with a DNQ
 # Date Started: 1/3/17
-# Last Modified: 1/21/17
+# Last Modified: 2/5/17
 # Programmer: Connor
 
 import os
@@ -11,14 +11,89 @@ import random
 from pygame.locals import *
 import numpy
 import pyscreenshot as ImageGrab
+import tensorflow as tf
+
+
+# DNQ Code Begins here:
+# Hyperparameters
+ACTIONS = 4  # Rotate left, rotate right, drop piece to bottom, do nothing.
+LEARNINGRATE = 0.01  # To start, will change at some point.
+
+
+def createWeight(shape):
+    #  Shape is a 1-d integer array. This defines the shape of the output tensor
+    print("Creating Weight")
+    weight = tf.truncated_normal(shape, stddev=0.01)  # Creates a random initial weight from a standard distribution with a standard deviation of 0.01.
+    return tf.Variable(weight)
+
+def createBias(shape):
+    print("Creating bias")
+    bias = tf.constant(0.01, shape=shape)
+    return tf.Variable(bias)
+
+
+def createConvolution(input, filter, stride):
+    # Computes a 2D convolution given 4D input tensors (input, filter)
+    return tf.nn.conv2d(input, filter, strides=[1, stride, stride, 1], padding="SAME")
+
+def createNetwork():
+    # Input for original code is 80x80
+    # A Tensor is an n-dimensional array
+    print("Creating Network...")
+
+    layerOneWeights = createWeight([8, 8, 4, 32])  # Output Tensor is 8x8x4x32 for layer one
+    layerOneBias = createBias([32])  # Creates a constant tensor with a dimensionality of 32 (1-d)
+
+    layerTwoWeights = createWeight([4, 4, 32, 64])  # Output tensor for layer two is 4x4x32x64
+    layerTwoBias = createBias([64])  # Creates a constant tensor with dimensionality of 64
+
+    layerThreeWeights = createWeight([3, 3, 64, 64])  # Output Tensor is 3x3x64x64 for layer three
+    layerThreeBias = createBias([64]) # Creates a constant tensor with dimensionality of 64
+
+    weights_fc1 = createWeight([1600, 512])  # Output tensor will be 1600x512. Creates weights for fully connected ReLU layer.
+    bias_fc1 = createBias([512])  # Tensor will be 512. Creates bias for fully connected ReLU layer
+
+    weights_fc2 = createWeight([512, ACTIONS])  # Output tensor will be 512x4 (In this case). Creates weights for fullyConnectedLayer to Readout Layer.
+    bias_fc2 = createBias([ACTIONS])  # Tensor will be 4. Creates bias for readout layer.
+
+    # Create Input Layer
+    # Input image is 250x502 and we feed in 4 images at once...
+    input = tf.placeholder("float", [None, 250, 502, 4])  # Creates a tensor that will always be fed a tensor of floats 250x502x4 (input size)
+
+    # The hidden layers will have a rectified linear activation function (ReLU)
+    # Create first convolution (hidden layer one) by using the input and layerOneWeights and then adding the Bias
+    conv1 = tf.nn.relu(createConvolution(input, layerOneWeights, stride=4) + layerOneBias)
+
+    # Create second convolution (hidden layer two) by using the first hidden layer (conv1) and the second layer weights. Add the second layer bias
+    conv2 = tf.nn.relu(createConvolution(conv1, layerTwoWeights, stride=2) + layerTwoBias)
+
+    # Create third and final convolution (hidden layer three) by using the second hidden layer (conv2) and the third layer weights and bias
+    conv3 = tf.nn.relu(createConvolution(conv2, layerThreeWeights, stride=1) + layerThreeBias)
+
+    # Reshape third layer convolution into a 1-d Tensor (basically a list or array)
+    conv3Flat = tf.reshape(conv3, [-1, 1600])  # Use 1600 for use with weights_fc1
+
+    hiddenFullyConnceted = tf.nn.relu(tf.matmul(conv3Flat, weights_fc1) + bias_fc1)  # Creates final hidden layer with 256 fully connected ReLU nodes
+
+    # Create readout layer
+    readout = tf.matmul(hiddenFullyConnceted, weights_fc2) + bias_fc2  # Creates readout layer (3x1?)
+
+    return input, readout, hiddenFullyConnceted
+
+def trainNetwork(input, hiddenFullyConnected, readout, sess):
+    # input is the pixel input from the game, hiddenFullyConnected is the fully connected ReLU layer (second to last layer),
+    # readout is the readout from the final layer (action to take) and sess is the TensorFlow session
+    print("Training Network")
+
+
 
 #  This sets the starting position for the pygame Window. It's set to the top-left corner because that is where
-#  Pyscreenshot sets its bounding box.
+#  Pyscreenshot sets its bounding box by default
 x = 0
 y = 0
 os.environ['SDL_VIDEO_WINDOW_POS'] = "%d, %d" % (x, y)
 
-# Global Variables
+# Global Variables for game
 score = 0
 level = 1  # Start on level 1
 frameName = 0
@@ -161,7 +236,15 @@ class Board:
         return self._can_move_piece(dx=0,  dy=1)
 
     def drop_piece(self):
-        Tetris.exportFrame(self)  # This will create a new "screenshot" of the game every time the pieces drop
+        Tetris.exportFrame(self, False)  # This will create a new "screenshot" of the game every time the pieces drop
+        if self._can_drop_piece():
+            self.move_piece(dx=0,  dy=1)
+        else:
+            self.absorb_piece()
+            self.delete_lines()
+
+    # Same as drop_piece but won't lag the program when using space to fully drop piece
+    def drop_piece_fully(self):
         if self._can_drop_piece():
             self.move_piece(dx=0,  dy=1)
         else:
@@ -256,19 +339,21 @@ class Board:
 
     def full_drop_piece(self):
         while self._can_drop_piece():
-            self.drop_piece()
+            self.drop_piece_fully()
         self.drop_piece()
 
 class Tetris:
     DROP_EVENT = USEREVENT + 1
-    save = True
-    show = False
+    save = False  # Set to true to save step-by-step screenshots to project directory (good for logging)
+    show = False  # Set to true to display step-by-step screenshots (CREATES MANY WINDOWS!)
+    frameNumber = 0  # Will be used to count number of frames
+    frameStack = []  # Will be used to hold sequences of 4 frames
 
     def __init__(self):
         self.surface = pygame.display.set_mode((250,  550))  # Set dimensions of game window. Creates a Surface
         self.clock = pygame.time.Clock()
         self.board = Board(self.surface)
-        self.exportFrame()
+        self.exportFrame(False)
 
 
     def handle_key(self, event_key):
@@ -297,7 +382,7 @@ class Tetris:
         global score
         pygame.init()
         pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
-        pygame.display.set_caption("Tetris V1.2")  # Set window title
+        pygame.display.set_caption("Tetris V1.3")  # Set window title
         font = pygame.font.Font("/System/Library/Fonts/Helvetica.dfont", 24)
         white = (255, 255, 255)
         black = (0, 0, 0)
@@ -327,20 +412,40 @@ class Tetris:
             pygame.display.update()
             self.clock.tick(60)  # Set game speed
 
-    def exportFrame(self):
+    def exportFrame(self, toReturn):
         #  Gets called every time the screen is updated (when a piece drops)
         global frameName
+        Tetris.frameNumber += 1  # Increment frameNumber, every 4 send stacked frames to DNQ
         img = ImageGrab.grab(bbox=(0, 45, 250, 547))  # Screenshots the Tetris game window without the text at the bottom
         img = img.convert(mode='L')  # Convert to 8-bit black and white
+
         if Tetris.show:  # Set flag to show images as they are created
             img.show()
         if Tetris.save:  # Set flag to save images to project directory with a random name
             fileName = "test" + str(frameName) + ".png"  # Create sequential fileName to save image
             img.save(fileName, format='png')
             frameName += 1
+
         #frame = list(img.getdata())  # Similar to numpy.asarray. Returns all pixel data as a List.
         frame = numpy.asarray(img)  # Creates a list with all pixel values in order. This will be exported to the ML agent.
-        print(frame)
+        Tetris.frameStack.append(frame)  # Hold value of frame
+
+        #  If it has been 4 frames, stack together the 4 frames for exporting to DNQ
+        if Tetris.frameNumber % 4 == 0:
+            print(str(Tetris.frameNumber) + " called")
+            frameSequence = numpy.stack((Tetris.frameStack[0], Tetris.frameStack[1],
+                                         Tetris.frameStack[2], Tetris.frameStack[3]), axis=0)
+            # If we should return the frame sequence
+            if toReturn:
+                return frameSequence
+        #print(frame)
+
+
+def playGame():
+    Tetris().run()
 
 if __name__ == "__main__":
-    Tetris().run()
+    sess = tf.InteractiveSession()
+    createNetwork()
+    trainNetwork()
+    playGame()
