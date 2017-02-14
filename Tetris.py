@@ -1,5 +1,5 @@
 # Program Name: Tetris.py
-# Program Purpose: Tetris built in Python for eventual use with a DNQ
+# Program Purpose: Tetris built in Python for eventual use with a DQN
 # Date Started: 1/3/17
 # Last Modified: 2/13/17
 # Programmer: Connor
@@ -24,6 +24,7 @@ os.environ['SDL_VIDEO_WINDOW_POS'] = "%d, %d" % (x, y)
 
 # Global Variables for game
 score = 0
+thetaScore = 0  # Keep track of changes in score (used to reward agent)
 level = 1  # Start on level 1
 frameName = 0
 terminal = False  # Flag for GameOver
@@ -167,7 +168,8 @@ class Board:
         return self._can_move_piece(dx=0,  dy=1)
 
     def drop_piece(self):
-        Tetris.exportFrame(self)  # This will create a new "screenshot" of the game before the piece drops
+        if self.game_over():
+            Tetris.reset()
         if self._can_drop_piece():
             self.move_piece(dx=0,  dy=1)
         else:
@@ -204,6 +206,7 @@ class Board:
     def score(self, scoreToAdd):
         global score
         global level
+        global thetaScore
         print("Score to Add: " + str(scoreToAdd))
         if scoreToAdd == 1:
             scoreToAdd = 40 * level
@@ -215,6 +218,8 @@ class Board:
             scoreToAdd = 1200 * level
         else:
             print("ELSE")  # Should never be called unless agent somehow performs god-like actions and clears 5 lines at once
+        thetaScore = scoreToAdd  # make a copy of the score being added to determine change in score (send as reward to agent)
+        print("ThetaScore: " + str(thetaScore))
         score += scoreToAdd
         white = (255, 255, 255)
         black = (0, 0, 0)
@@ -271,10 +276,16 @@ class Board:
             self.drop_piece_fully()
         self.drop_piece()
 
+    def clearBoard(self):
+        del self.board  # Delete old board
+        board = Board  # Create new board
+        Tetris.board = board  # Reset to new board
+
+
 
 class Tetris:
     DROP_EVENT = USEREVENT + 1
-    save = False  # Set to true to save frame-by-frame screenshots to project directory (good for logging)
+    save = True  # Set to true to save frame-by-frame screenshots to project directory (good for logging)
     show = False  # Set to true to display frame-by-frame screenshots (CREATES MANY WINDOWS!)
     frameNumber = 0  # Will be used to count number of frames. Used for naming and determines when to export stack to agent.
     frameStack = []  # Will be used to hold sequences of 4 frames
@@ -285,7 +296,9 @@ class Tetris:
         self.clock = pygame.time.Clock()  # Create game clock
         self.board = Board(self.surface)  # Create board for Tetris pieces
 
-    def handle_input(self, input):
+    def handle_input(self, agentInput):
+        global thetaScore
+        global frameName
         # Do nothing[0], rotate right[1], rotate left[2], move left[3], move right [4], drop piece to bottom[5].
         if input == 0:
             print("Do nothing")
@@ -300,45 +313,7 @@ class Tetris:
         elif input == 5:
             self.board.drop_piece_fully()
 
-    def run(self):
-        # Set-up variables and defaults for game...
-        global level
-        global score
-        font = pygame.font.Font(FONT_PATH, 24)
-        pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
-        pygame.display.set_caption("Tetris V2.0")  # Set window title
-        white = (255, 255, 255)
-        black = (0, 0, 0)
-        label = font.render("Score: " + str(score),  1, white)
-        self.surface.blit(label, (0,  530))
-        levelLabel = font.render("Level: " + str(level), 1, white, black)
-        self.surface.blit(levelLabel, (0, 500))
-
-        while True:  # Gameloop
-            if self.board.game_over():
-                print("Game Over")
-                print("Time: " + str(pygame.time.get_ticks() / 1000))   # Returns game time in seconds
-                pygame.quit()
-                sys.exit()
-            rect = (0, 0, 250, 500)
-            self.surface.fill((0, 0, 0), rect)
-            for event in pygame.event.get():
-                if event.type == QUIT:
-                    pygame.quit()
-                    sys.exit()
-                elif event.type == Tetris.DROP_EVENT:
-                    self.board.drop_piece()
-
-            self.board.draw()
-            pygame.display.update()
-            self.clock.tick(60)  # Set game speed
-
-    def exportFrame(self):
-        #  Gets called every time the screen is updated (when a piece drops)
-        global frameName
-        global score
-        global terminal
-        Tetris.frameNumber += 1  # Increment frameNumber, every 4 frames send stacked frames to DNQ
+        Tetris.frameNumber += 1  # Increment frameNumber, every 4 frames send stacked frames to DQN
         img = ImageGrab.grab(bbox=(0, 45, 250, 547))  # Screenshots the Tetris game window without the text at the bottom
         img = img.convert(mode='L')  # Convert to 8-bit black and white
 
@@ -352,31 +327,79 @@ class Tetris:
             frameName += 1
 
         #frame = list(img.getdata())  # Similar to numpy.asarray. Returns all pixel data as a List.
+
         frame = numpy.asarray(img)  # Creates a list with all pixel values in order. This will be exported to the ML agent.
-        Tetris.frameStack.append(frame)  # Hold value of frame for eventual stacking
+        reward = thetaScore
+        thetaScore = 0
+        return frame, reward, terminal
 
-        #  If it has been 4 frames, stack together the 4 frames for exporting to DNQ
-        if Tetris.frameNumber % 4 == 0:
-            print("Frame : " + str(Tetris.frameNumber))
-            frameSequence = numpy.stack((Tetris.frameStack[0], Tetris.frameStack[1],
-                                         Tetris.frameStack[2], Tetris.frameStack[3]), axis=0)
-            Tetris.frameStack[:] = []  # Reset frameStack for next sequence
+    def run(self):
+        # Set-up variables and defaults for game...
+        global level
+        global score
+        font = pygame.font.Font(FONT_PATH, 24)
+        pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
+        pygame.display.set_caption("Tetris V2.01")  # Set window title
+        white = (255, 255, 255)
+        black = (0, 0, 0)
+        label = font.render("Score: " + str(score),  1, white)
+        self.surface.blit(label, (0,  530))
+        levelLabel = font.render("Level: " + str(level), 1, white, black)
+        self.surface.blit(levelLabel, (0, 500))
+        """
+        while True:  # Gameloop
+            if self.board.game_over():
+                print("Game Over")
+                print("Time: " + str(pygame.time.get_ticks() / 1000))   # Returns game time in seconds
+                Tetris.reset()
+            rect = (0, 0, 250, 500)
+            self.surface.fill((0, 0, 0), rect)
+            for event in pygame.event.get():
+                if event.type == QUIT:
+                    pygame.quit()
+                    sys.exit()
+                elif event.type == Tetris.DROP_EVENT:
+                    self.board.drop_piece()
+            """
+    def updateGame(self):
+        self.board.draw()
+        pygame.display.update()
+        self.clock.tick(60)  # Set game speed
 
-            return frameSequence, score, terminal
+    def reset(self):
+        global level
+        global score
+        global thetaScore
+        global terminal
+        Board.clearBoard()  # Reset game
+        level = 0
+        score = 0
+        thetaScore = 0
+        terminal = False
+
+    def exportFrame(self):
+        #  Gets called every time the screen is updated (when a piece drops)
+        global frameName
+        global thetaScore
+        global terminal
 
 
 def playGame():
     Tetris().run()
 
+tetris = Tetris()  # Create tetris game
+tetris.run()
 
-# DNQ Code Begins here:
+# DQN Code Begins here:
 # Hyperparameters
-ACTIONS = 4  # Rotate left, rotate right, drop piece to bottom, do nothing.
+ACTIONS = 6  # Do nothing[0], rotate right[1], rotate left[2], move left[3], move right [4], drop piece to bottom[5].
 LEARNINGRATE = 0.01  # To start, will change at some point.
 INIT_EPSILON = 1  # Starting epsilon (for exploring). This will make the agent start by choosing an exploring action constantly.
 FINAL_EPSILON = 0.05  # Final epsilon (final % chance to take an exploring action)
-OBSERVE = 50000  # Observe game for 50000 frames before doing anything. This fills the replay memory before the agent can take action
+OBSERVE = 10  # Observe game for 50000 frames before doing anything. This fills the replay memory before the agent can take action
 REPLAY_MEMORY = 50000
+BATCH_SIZE = 32  # Size of minibatch
+GAMMA = 0.99  # Decay rate of past observations
 
 
 def createWeight(shape):
@@ -412,11 +435,11 @@ def createNetwork():
     layerThreeWeights = createWeight([3, 3, 64, 64])  # Output Tensor is 3x3x64x64 for layer three. This will be the size of the layer 3 convolution.
     layerThreeBias = createBias([64]) # Creates a constant tensor with dimensionality of 64
 
-    # 4's below were original set to 512
-    weights_fc1 = createWeight([1600, 512])  # Output tensor will be 1600 x ACTIONS. Creates weights for fully connected ReLU layer.
-    bias_fc1 = createBias([512])  # Tensor will be equal to the amount of actions. Creates bias for fully connected ReLU layer
+    # 576's below were original set to 512. use 576 for 3 x 3 x 64
+    weights_fc1 = createWeight([576, 576])  # Output tensor will be 1600 x ACTIONS. Creates weights for fully connected ReLU layer.
+    bias_fc1 = createBias([576])  # Tensor will be equal to the amount of actions. Creates bias for fully connected ReLU layer
 
-    weights_fc2 = createWeight([512, ACTIONS])  # Output tensor will be 4x4 (In this case). Creates weights for fullyConnectedLayer to Readout Layer.
+    weights_fc2 = createWeight([576, ACTIONS])  # Output tensor will be 4x4 (In this case). Creates weights for fullyConnectedLayer to Readout Layer.
     bias_fc2 = createBias([ACTIONS])  # Tensor will be 4. Creates bias for readout layer.
 
     # Create layers below...
@@ -436,7 +459,7 @@ def createNetwork():
     conv3 = tf.nn.relu(createConvolution(conv2, layerThreeWeights, stride=1) + layerThreeBias)
 
     # Reshape third layer convolution into a 1-d Tensor (basically a list or array)
-    conv3Flat = tf.reshape(conv3, [-1, 1600])  # Use 1600 for use with weights_fc1
+    conv3Flat = tf.reshape(conv3, [-1, 576])  # Use 1600 for use with weights_fc1
 
     hiddenFullyConnceted = tf.nn.relu(tf.matmul(conv3Flat, weights_fc1) + bias_fc1)  # Creates final hidden layer with 256 fully connected ReLU nodes
 
@@ -447,6 +470,7 @@ def createNetwork():
 
 
 def trainNetwork(input, readout, fullyConnected, sess):
+    global tetris
     # input is the pixel input from the game, hiddenFullyConnected is the fully connected ReLU layer (second to last layer),
     # readout is the readout from the final layer (action to take) and sess is the TensorFlow session
     print("Training Network")
@@ -473,47 +497,93 @@ def trainNetwork(input, readout, fullyConnected, sess):
     else:
         print("Could not load from save")
 
-    epsilon = INIT_EPSILON
-    print("playgame")
-    game = playGame()
-    # ============================ For some reason this line stops execution of code past it ===========================
-    print("after playgame")
-    imageData, reward, terminal = Tetris.exportFrame(game)   # localInput = image data from game, reward = reward, terminal = gameOver flag.
 
+    doNothing = numpy.zeros(ACTIONS)  # Create a zeros array for the actions
+    doNothing[0] = 1  # Send do_nothing by default
+
+    epsilon = INIT_EPSILON
+
+    imageData, reward, terminal = tetris.handle_input(agentInput=doNothing)   # localInput = image data from game, reward = reward, terminal = gameOver flag.
+    frameStack = numpy.stack((imageData, imageData, imageData, imageData), axis=0)  # Create inital stack of images for feeding. We will append new frames to this.
+    print(frameStack.shape)
     cycleCounter = 0  # Used to count frames
-    print("test2")
     # Run forever
     while True:
         # the output layer will contain the Q (action) values for each action the agent can perform (hence layer size 6)
-        readoutEvaluated = readout.eval(feed_dict={input: [imageData]})  # readout_local is equal to the evaluation of the output layer when feeding the input layer the new image data.
-        action = numpy.zeros([ACTIONS])  # Create a zeros array for the actions
-        actionToSend = 0  # Action to send to game. Set to do nothing by default.
+
+        readoutEvaluated = readout.eval(feed_dict={input: [frameStack]})[0]  # readout_local is equal to the evaluation of the output layer when feeding the input layer the newest frame
+        action = numpy.zeros([ACTIONS])
+        chosenAction = 0
+
         print('test' + str(readoutEvaluated))
 
         # Explore / Exploit decision
-        if random.random() <= epsilon or Tetris.frameNumber > OBSERVE:  # If we should explore...
+        if random.random() <= epsilon or tetris.frameNumber <= OBSERVE:  # If we should explore...
                 # Choose action randomly
-                actionToSend = random.randrange(action)  # Choose random action from list of actions..
-                action[actionToSend] = 1  # Set that random action to 1 (for true)
+                chosenAction = random.randint(0, len(action))  # Choose random action from list of actions..
+                print("Chosen action: " + str(chosenAction))
+                if chosenAction == len(action):
+                     chosenAction = chosenAction - 1  # Prevents index out of bounds as len(action) is non-zero indexed while lists are zero-indexed
+                action[chosenAction] = 1  # Set that random action to 1 (for true)
         else:
                 # Choose action greedily
                 print (readoutEvaluated)
-                actionToSend = action.argmax(readoutEvaluated)  # Set action to the largest value for the output layer when fed the input
-                action[actionToSend] = 1  # Set the largest "action" to true
+                chosenAction = action.argmax(readoutEvaluated)  # Set action to the largest value for the output layer when fed the input
+                action[chosenAction] = 1  # Set the largest "action" to true
 
         # Scale Epsilon if done observing
         if epsilon > FINAL_EPSILON and cycleCounter > OBSERVE:  # If epsilon is not final and we're done observing...
             epsilon -= 0.002  # Subtract 0.002 from epsilon. This will reduce 2% from epsilon every 1000 timesteps...
 
-        # If 4 images are ready to be sent to the agent...
-        if Tetris.frameNumber % 4 == 0:
-            # Run once per frame. This will populate Q values for each state and allow us to fill the replay memory
-            for i in range(0, 1):
-                # Run selected action and observe the reward
-                Tetris.handle_key(action)  # Send selected action to game
+        # Run once per frame. This will populate Q values for each state and allow us to fill the replay memory
+        for i in range(0, 1):
+            # Run selected action and observe the reward
+            frame, localScore, localTerminal = tetris.handle_input(agentInput=action)  # Send selected action to game
 
-                imageData, localScore, localTerminal = Tetris.exportFrame()
+            #frame, localScore, localTerminal = tetris.exportFrame()  # Should we be stacking the images?
 
+            frameStackNew = numpy.append(frame, frameStack[:, :, 0:3], axis=0)  # Append framestack to new frame
+
+            # frameStack = previous stack of frames, action = taken action, localScore = change in score (reward), frameStackNew = updated stack of frames, localTerminal = is game over?
+            replayMemory.append((frameStack, action, localScore, frameStackNew, localTerminal))  # Store transition in replay memory
+
+            # If replay memory is full, get rid of oldest
+            if len(replayMemory) > REPLAY_MEMORY:
+                replayMemory.popleft()
+
+        if cycleCounter > OBSERVE:
+            # Sample miniBatch
+            minibatch = random.sample(replayMemory, BATCH_SIZE)  # Get BATCH_SIZE random samples from replayMemory
+
+            # Get batch variables
+            initialFrameBatch = [replayMemory[0] for r in minibatch]
+            actionBatch = [replayMemory[1] for a in minibatch]
+            scoreBatch = [replayMemory[2] for s in minibatch]
+            updatedFrameBatch = [replayMemory[3] for r in minibatch]
+
+            yBatch = []  # Create blank list
+
+            batchReadout = readout.eval(feed_dict={input : updatedFrameBatch})  # Get readout of final layer (Q Values) by feeding input layer the updated frames
+
+            for i in range(0, len(minibatch)):
+                if minibatch[i][4]:
+                    yBatch.append(scoreBatch[i])
+                else:
+                    yBatch.append(scoreBatch[i] + GAMMA * numpy.max(batchReadout[i]))
+
+            # Perform gradient step by feeding trainingStep
+            trainingStep.run(feed_dict={y : yBatch,
+                                        a : actionBatch,
+                                        input : initialFrameBatch})
+
+        frameStack = frameStackNew  # Update Framestack
+        cycleCounter += 1
+
+        # Save network every 5000 steps
+        if cycleCounter % 5000 == 0:
+            saver.save(sess, 'savedNetworks/Tetris-dqn', global_step=cycleCounter)
+
+        tetris.updateGame()
 
 if __name__ == "__main__":
     sess = tf.InteractiveSession()
