@@ -1,7 +1,7 @@
 # Program Name: Tetris.py
 # Program Purpose: Tetris built in Python for eventual use with a DQN
 # Date Started: 1/3/17
-# Last Modified: 2/13/17
+# Last Modified: 2/14/17
 # Programmer: Connor
 
 import tensorflow as tf
@@ -10,14 +10,9 @@ import os
 import pygame
 import numpy
 from pygame.locals import *
-import pyscreenshot as ImageGrab
 import random
 import datetime
-from io import StringIO
-import PIL
 from PIL import Image
-
-inputFromUser = input
 
 pygame.init()
 #  This sets the starting position for the pygame Window. It's set to the top-left corner because that is where
@@ -32,7 +27,7 @@ thetaScore = 0  # Keep track of changes in score (used to reward agent)
 level = 1  # Start on level 1
 frameName = 0
 terminal = False  # Flag for GameOver
-FONT_PATH = "C:\Windows\Fonts\Arial.ttf"  # Set to whatever font you want the score and levels displayed as
+FONT_PATH = "/System/Library/Fonts/Helvetica.dfont"  # Set to whatever font you want the score and levels displayed as
 
 
 class Piece:
@@ -480,25 +475,38 @@ def createNetwork():
     hiddenFullyConnceted = tf.nn.relu(tf.matmul(conv3Flat, weights_fc1) + bias_fc1)  # Creates final hidden layer with 256 fully connected ReLU nodes
 
     # Create readout layer
-    readout = tf.matmul(hiddenFullyConnceted, weights_fc2) + bias_fc2  # Creates readout layer (3x1?)
+    readout = tf.matmul(hiddenFullyConnceted, weights_fc2) + bias_fc2  # Creates readout layer
+
 
     return input, readout, hiddenFullyConnceted
 
 
-def trainNetwork(input, readout, fullyConnected, sess):
+def trainNetwork(inputLayer, readout, fullyConnected, sess):
     global tetrisObject
     printOutActions = {0 : "Do Nothing", 1 : "Rotate Right", 2 : "Rotate Left", 3 : "Move Left", 4 : "Move Right", 5 : "Drop Piece"}
-    # input is the pixel input from the game, hiddenFullyConnected is the fully connected ReLU layer (second to last layer),
+    # inputLayer is the inputLayer (duh), hiddenFullyConnected is the fully connected ReLU layer (second to last layer),
     # readout is the readout from the final layer (action to take) and sess is the TensorFlow session
     print("Training Network")
+    print(readout)
+    # Define cost function
+    a = tf.placeholder("float", [ACTIONS, None])  # creates a float variable that will take n x ACTIONS tensors. (Used for holding actions in minibatch)
+    y = tf.placeholder("float", [None])  # Creates a float tensor that will take any shape tensor as input. (used for holding yBatch in minibatch)
 
-    # Create cost function
-    a = tf.placeholder("float", [None, ACTIONS])  # creates a float variable that will take n x ACTIONS tensors
-    y = tf.placeholder("float", [None])  # Creates a float tensor that will take any shape tensor as input
+    readout_action = tf.reduce_sum(tf.mul(readout, a), axis=1)  # multiples readout (Q values) by a (action Batch) and then computes the sum of the first row
+    print(readout_action)
 
-    readout_action = tf.reduce_sum(tf.mul(readout, a), axis=1)  # multiples readout (Q values) by a (n x ACTIONS) and then computes the sum of the first row
-    cost = tf.reduce_mean(tf.square(y - readout_action))  # Computes the squared values of y - readout_action and then finds the mean of all the elements since no axis is provided
-    trainingStep = tf.train.AdamOptimizer(0.001).minimize(cost)  # Calculates the training step to take by minimizing the cost with 1e-6 as a learning rate according to ADAM algorithm...
+    a = tf.convert_to_tensor(numpy.zeros(26))  # Create a new tensor with 26 0's
+    print(a)
+
+
+
+    readout_action2 = tf.concat([readout_action, a], 0)  # Concatenate two tensors
+    print(readout_action2)
+
+    cost1 = tf.square(y - readout_action)
+    cost = tf.reduce_mean(cost1)
+    #cost = tf.reduce_mean(tf.square(y - readout_action))  # Computes the squared values of y - readout_action and then finds the mean of all the elements since no axis is provided
+    trainingStep = tf.train.AdamOptimizer(0.001).minimize(cost)  # Creates an object for training using the ADAM algorithm
 
     replayMemory = deque()  # Will be used to store replay memory
 
@@ -530,7 +538,7 @@ def trainNetwork(input, readout, fullyConnected, sess):
         # the output layer will contain the Q (action) values for each action the agent can perform (hence layer size 6)
         frameStack = frameStack.reshape([250, 502, 4])  # Reshape tensor for use in next line
 
-        readoutEvaluated = readout.eval(feed_dict={input: [frameStack]})[0]  # readout_local is equal to the evaluation of the output layer when feeding the input layer the newest frame
+        readoutEvaluated = readout.eval(feed_dict={inputLayer: [frameStack]})[0]  # readout_local is equal to the evaluation of the output layer when feeding the input layer the newest frame
         action = numpy.zeros([ACTIONS])
         chosenAction = 0  # Do nothing by default
 
@@ -583,26 +591,29 @@ def trainNetwork(input, readout, fullyConnected, sess):
             initialFrameBatch = [r[0] for r in minibatch]
             actionBatch = [r[1] for r in minibatch]
             scoreBatch = [r[2] for r in minibatch]
-            updatedFrameBatch = [r[3] for r in minibatch]
-
+            updatedFrameBatch = [r[3] for r in minibatch] # Returns
             yBatch = []  # Create blank list
 
             # [4x125000]
-            batchReadout = readout.eval(feed_dict={input: updatedFrameBatch})  # Get readout of final layer (Q Values) by feeding input layer the updated frames
+            batchReadout = readout.eval(feed_dict={inputLayer: updatedFrameBatch})  # Get readout of final layer (Q Values) by feeding input layer the updated frames
 
             for i in range(0, len(minibatch)):
-                if minibatch[i][4]:
+                if minibatch[i][4]:  # If game over is true for that replay, append the score for that
                     yBatch.append(scoreBatch[i])
-                else:
+                else:  # Otherwise append the score + GAMMA * the max value in the new Q Values for the updated frames
                     yBatch.append(scoreBatch[i] + GAMMA * numpy.max(batchReadout[i]))
 
-            # Perform gradient step by feeding trainingStep
-            trainingStep.run(feed_dict={y : yBatch,
-                                        a : actionBatch,
-                                        input : initialFrameBatch})
+            actionBatch = numpy.transpose(actionBatch)  # Swap dimensions for use in cost function
+
+            # Perform training step by feeding trainingStep
+            trainingStep.run(feed_dict={y: yBatch,
+                                        a: actionBatch,
+                                        inputLayer: initialFrameBatch})
+
 
         frameStack = frameStackNew  # Update Framestack
         cycleCounter += 1
+
 
         # Save network every 5000 steps
         if cycleCounter % 5000 == 0:
