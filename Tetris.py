@@ -1,33 +1,26 @@
 # Program Name: Tetris.py
-# Program Purpose: Tetris built in Python for eventual use with a DQN
+# Program Purpose: Tetris built in Python for use with a DQN that will learn to play
 # Date Started: 1/3/17
-# Last Modified: 2/14/17
+# Last Modified: 2/16/17
 # Programmer: Connor
 
 import tensorflow as tf
 from collections import deque  # Deque used for replay memory
-import os
 import pygame
 import numpy
 from pygame.locals import *
 import random
-import datetime
 from PIL import Image
 
 pygame.init()
-#  This sets the starting position for the pygame Window. It's set to the top-left corner because that is where
-#  Pyscreenshot sets its bounding box by default
-x = 0
-y = 0
-os.environ['SDL_VIDEO_WINDOW_POS'] = "%d, %d" % (x, y)
 
 # Global Variables for game
-score = 0
+score = 0  # Total score
 thetaScore = 0  # Keep track of changes in score (used to reward agent)
 level = 1  # Start on level 1
-frameName = 0
+frameName = 0  # Used for naming screenshots
 terminal = False  # Flag for GameOver
-FONT_PATH = "/System/Library/Fonts/Helvetica.dfont"  # Set to whatever font you want the score and levels displayed as
+FONT_PATH = "/System/Library/Fonts/Helvetica.dfont"  # Use C:\Windows\Fonts\Arial.ttf for Windows.
 
 
 class Piece:
@@ -89,8 +82,6 @@ class Board:
     def generate_piece(self):
         self.piece = Piece()   # Set first piece to random piece per the Piece Class init function
         self.piece_x, self.piece_y = 3, 0   # Set to center
-
-        #print(self.piece.piece_name)
 
     def __init__(self, surface):
         self.surface = surface
@@ -294,13 +285,10 @@ class Tetris:
     DROP_EVENT = USEREVENT + 1
     save = False  # Set to true to save frame-by-frame screenshots to project directory (good for logging)
     show = False  # Set to true to display frame-by-frame screenshots (CREATES MANY WINDOWS!)
-    frameNumber = 0  # Will be used to count number of frames. Used for naming and determines when to export stack to agent.
+    frameNumber = 0  # Will be used to count number of frames.
     frameStack = []  # Will be used to hold sequences of 4 frames
 
     def __init__(self):
-        print("Before init" + str(datetime.datetime.now()))
-        #pygame.init()
-        print("After init" + str(datetime.datetime.now()))
         self.surface = pygame.display.set_mode((250,  550))  # Set dimensions of game window. Creates a Surface
         self.clock = pygame.time.Clock()  # Create game clock
         self.board = Board(self.surface)  # Create board for Tetris pieces
@@ -324,33 +312,26 @@ class Tetris:
             self.board.move_piece(1, 0)
         elif agentInput == 5:
             self.board.drop_piece_fully()
-        pass
+
         self.board.drop_piece()  # Drop piece after agent manipulates it
         tetrisObject.frameNumber += 1  # Increment frameNumber, every 4 frames send stacked frames to DQN
 
-        img = pygame.image.tostring(self.surface, 'RGBA')
+        # Get image data as string, convert to image, resize image, convert to 8-bit black and white.
+        img = pygame.image.tostring(self.surface, 'RGB')
+        img3 = Image.frombytes('RGB', (250, 502), img)
+        img3 = img3.resize([80, 80])
+        img3 = img3.convert(mode='L')
 
-        #img = img.convert(mode='L')  # Convert to 8-bit black and white
+        frame = numpy.asarray(img3)  # Create numpy array of pixel data
 
-        #img = img.resize((63, 126))  # Uncomment this line to resize output image to (63, 126). Leaving out because it only reduces file size by 174 bytes.
         if tetrisObject.show:  # Set flag to show images as they are created
-            img.show()
+            img3.show()
         if tetrisObject.save:  # Set flag to save images to project directory with a random name
             fileName = "test" + str(frameName) + ".png"  # Create sequential fileName to save image
-            img.save(fileName, format='png')
+            img3.save(fileName, format='png')
             frameName += 1
 
-        #frame = list(img.getdata())  # Similar to numpy.asarray. Returns all pixel data as a List.
-
-        img3 = Image.frombytes('RGBA', (250, 502), img)
-        img3 = img3.convert(mode='L')
-        frame = list(img3.getdata())
-        frame
-        frame = numpy.asarray(frame)
-
-        #img2 = Image.open(img.read())
-
-        #frame = numpy.asarray(img)  # Creates a list with all pixel values in order. This will be exported to the ML agent.
+        # Set reward to the change in the score, reset thetaScore for next time
         reward = thetaScore
         thetaScore = 0
 
@@ -361,51 +342,36 @@ class Tetris:
         pygame.display.update()
         self.clock.tick(60)  # Set game speed
 
-        print("End of handle Input")
-
         return frame, reward, terminal
 
     def run(self):
-
         # Set-up variables and defaults for game...
         global level
         print("Run")
         global score
         font = pygame.font.Font(FONT_PATH, 24)
         pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
-        pygame.display.set_caption("Tetris V3")  # Set window title
+        pygame.display.set_caption("Tetris V3.1")  # Set window title
         white = (255, 255, 255)
         black = (0, 0, 0)
         label = font.render("Score: " + str(score),  1, white)
         self.surface.blit(label, (0,  530))
         levelLabel = font.render("Level: " + str(level), 1, white, black)
         self.surface.blit(levelLabel, (0, 500))
-        """
-        while True:  # Gameloop
-            if self.board.game_over():
-                print("Game Over")
-                print("Time: " + str(pygame.time.get_ticks() / 1000))   # Returns game time in seconds
 
-            for event in pygame.event.get():
-                if event.type == QUIT:
-                    pygame.quit()
-                    sys.exit()
-                elif event.type == Tetris.DROP_EVENT:
-                    self.board.drop_piece()
-            """
 
 def playGame(Tetris):
     Tetris.run()
 
 
+
 # DQN Code Begins here:
 # Hyperparameters
 ACTIONS = 6  # Do nothing[0], rotate right[1], rotate left[2], move left[3], move right [4], drop piece to bottom[5].
-LEARNINGRATE = 0.01  # To start, will change at some point.
 INIT_EPSILON = 1  # Starting epsilon (for exploring). This will make the agent start by choosing an exploring action constantly.
 FINAL_EPSILON = 0.05  # Final epsilon (final % chance to take an exploring action)
-OBSERVE = 100  # Observe game for 50000 frames before doing anything. This fills the replay memory before the agent can take action
-REPLAY_MEMORY = 100
+OBSERVE = 10000  # Observe game for 10000 frames. This fills the replay memory before the agent can take action
+REPLAY_MEMORY = 10000  # Size of ReplayMemory
 BATCH_SIZE = 32  # Size of minibatch
 GAMMA = 0.99  # Decay rate of past observations
 
@@ -425,15 +391,17 @@ def createBias(shape):
 
 
 def createConvolution(input, filter, stride):
-    # Computes a 2D convolution given 4D input tensors (input, filter)
+    # Computes a convolution given 4D input tensors (input, filter)
     return tf.nn.conv2d(input, filter, strides=[1, stride, stride, 1], padding="SAME")
+
+def max_pool(x):
+    return tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
 
 def createNetwork():
     playGame(tetrisObject)  # Start new Tetris Instance
+    # Input is 80 x 80 x 4 (80 width, 80 height, 4 images stacked together)
 
-    # Input is 250 x 502 x 2 x 3 (250 width, 502 height, 8-bit image, 3 images stacked together)
-    # A Tensor is an n-dimensional array
     print("Creating Network...")
 
     # Create weight and bias's(?) for each layer
@@ -444,39 +412,37 @@ def createNetwork():
     layerTwoBias = createBias([64])  # Creates a constant tensor with dimensionality of 64
 
     layerThreeWeights = createWeight([3, 3, 64, 64])  # Output Tensor is 3x3x64x64 for layer three. This will be the size of the layer 3 convolution.
-    layerThreeBias = createBias([64]) # Creates a constant tensor with dimensionality of 64
+    layerThreeBias = createBias([64])  # Creates a constant tensor with dimensionality of 64
 
-    # 576's below were original set to 512. use 576 for 3 x 3 x 64
-    weights_fc1 = createWeight([576, 576])  # Output tensor will be 1600 x ACTIONS. Creates weights for fully connected ReLU layer.
-    bias_fc1 = createBias([576])  # Tensor will be equal to the amount of actions. Creates bias for fully connected ReLU layer
+    weights_fc1 = createWeight([1600, 512])  # Output tensor will be 1600 x 512. Creates weights for fully connected ReLU layer.
+    bias_fc1 = createBias([512])  # Create bias for fully connected layer
 
-    weights_fc2 = createWeight([576, ACTIONS])  # Output tensor will be 4x4 (In this case). Creates weights for fullyConnectedLayer to Readout Layer.
-    bias_fc2 = createBias([ACTIONS])  # Tensor will be 4. Creates bias for readout layer.
+    weights_fc2 = createWeight([512, ACTIONS])  # Creates weights for fullyConnectedLayer to Readout Layer.
+    bias_fc2 = createBias([ACTIONS])  # Creates bias for readout layer.
 
     # Create layers below...
-
     # Create Input Layer
-    # Input image is 250x502 and we feed in 4 images at once...
-    input = tf.placeholder("float", [None, 250, 502, 4])  # Creates a tensor that will always be fed a tensor of floats 250x502x4 (input size)
+    # Input image is 80x80 and we feed in 4 images at once...
+    input = tf.placeholder("float", [None, 80, 80, 4])  # Creates a tensor that will always be fed a tensor of floats 80x80x4 (input size)
 
     # The hidden layers will have a rectified linear activation function (ReLU)
     # Create first convolution (hidden layer one) by using the input and layerOneWeights and then adding the Bias
     conv1 = tf.nn.relu(createConvolution(input, layerOneWeights, stride=4) + layerOneBias)
+    pool1 = max_pool(conv1)  # Perform max pooling
 
     # Create second convolution (hidden layer two) by using the first hidden layer (conv1) and the second layer weights. Add the second layer bias
-    conv2 = tf.nn.relu(createConvolution(conv1, layerTwoWeights, stride=2) + layerTwoBias)
+    conv2 = tf.nn.relu(createConvolution(pool1, layerTwoWeights, stride=2) + layerTwoBias)
 
     # Create third and final convolution (hidden layer three) by using the second hidden layer (conv2) and the third layer weights and bias
     conv3 = tf.nn.relu(createConvolution(conv2, layerThreeWeights, stride=1) + layerThreeBias)
 
     # Reshape third layer convolution into a 1-d Tensor (basically a list or array)
-    conv3Flat = tf.reshape(conv3, [-1, 576])  # Use 1600 for use with weights_fc1
+    conv3Flat = tf.reshape(conv3, [-1, 1600])  # Use 1600 for use with weights_fc1
 
     hiddenFullyConnceted = tf.nn.relu(tf.matmul(conv3Flat, weights_fc1) + bias_fc1)  # Creates final hidden layer with 256 fully connected ReLU nodes
 
     # Create readout layer
     readout = tf.matmul(hiddenFullyConnceted, weights_fc2) + bias_fc2  # Creates readout layer
-
 
     return input, readout, hiddenFullyConnceted
 
@@ -485,28 +451,20 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
     global tetrisObject
     printOutActions = {0 : "Do Nothing", 1 : "Rotate Right", 2 : "Rotate Left", 3 : "Move Left", 4 : "Move Right", 5 : "Drop Piece"}
     # inputLayer is the inputLayer (duh), hiddenFullyConnected is the fully connected ReLU layer (second to last layer),
-    # readout is the readout from the final layer (action to take) and sess is the TensorFlow session
+    # readout is the readout from the final layer (Q Values) and sess is the TensorFlow session
+
     print("Training Network")
-    print(readout)
+
     # Define cost function
-    a = tf.placeholder("float", [ACTIONS, None])  # creates a float variable that will take n x ACTIONS tensors. (Used for holding actions in minibatch)
+    a = tf.placeholder("float", [None, ACTIONS])  # creates a float variable that will take n x ACTIONS tensors. (Used for holding actions in minibatch)
     y = tf.placeholder("float", [None])  # Creates a float tensor that will take any shape tensor as input. (used for holding yBatch in minibatch)
 
-    readout_action = tf.reduce_sum(tf.mul(readout, a), axis=1)  # multiples readout (Q values) by a (action Batch) and then computes the sum of the first row
-    print(readout_action)
+    readout_action = tf.reduce_sum(tf.multiply(readout, a), axis=1)  # multiples readout (Q values) by a (action Batch) and then computes the sum of the first row
 
-    a = tf.convert_to_tensor(numpy.zeros(26))  # Create a new tensor with 26 0's
-    print(a)
+    cost1 = tf.square(y - readout_action)  # Find the squared error...
+    cost = tf.reduce_mean(cost1)  # Reduce
 
-
-
-    readout_action2 = tf.concat([readout_action, a], 0)  # Concatenate two tensors
-    print(readout_action2)
-
-    cost1 = tf.square(y - readout_action)
-    cost = tf.reduce_mean(cost1)
-    #cost = tf.reduce_mean(tf.square(y - readout_action))  # Computes the squared values of y - readout_action and then finds the mean of all the elements since no axis is provided
-    trainingStep = tf.train.AdamOptimizer(0.001).minimize(cost)  # Creates an object for training using the ADAM algorithm
+    trainingStep = tf.train.AdamOptimizer(0.001).minimize(cost)  # Creates an object for training using the ADAM algorithm with a learning rate of 0.001
 
     replayMemory = deque()  # Will be used to store replay memory
 
@@ -522,27 +480,24 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
     else:
         print("Could not load from save")
 
-    doNothing = 0  # Send do_nothing by default
+    doNothing = 0  # Send do_nothing action by default
 
     epsilon = INIT_EPSILON
 
-    imageData, reward, terminal = tetrisObject.handle_input(agentInput=doNothing)   # localInput = image data from game, reward = reward, terminal = gameOver flag.
-    print(imageData)
-    imageData.reshape([250, 502, 1])
-    frameStack = numpy.stack((imageData, imageData, imageData, imageData), axis=0)  # Create inital stack of images for feeding. We will append new frames to this.
+    imageData, reward, terminal = tetrisObject.handle_input(agentInput=doNothing)   # imageData = image data from game, reward = recieved reward, terminal = gameOver flag.
+
+    frameStack = numpy.stack((imageData, imageData, imageData, imageData), axis=2)  # Create inital stack of images for feeding. We will append new frames to this.
     cycleCounter = 0  # Used to count frames
 
     # Run forever - this is the main code
     while True:
-        print('In while')
-        # the output layer will contain the Q (action) values for each action the agent can perform (hence layer size 6)
-        frameStack = frameStack.reshape([250, 502, 4])  # Reshape tensor for use in next line
 
-        readoutEvaluated = readout.eval(feed_dict={inputLayer: [frameStack]})[0]  # readout_local is equal to the evaluation of the output layer when feeding the input layer the newest frame
-        action = numpy.zeros([ACTIONS])
+        readoutEvaluated = readout.eval(feed_dict={inputLayer: [frameStack]})[0]  # readoutEvaluated is equal to the evaluation of the output layer (Q values) when feeding the input layer the newest frame
+
+        action = numpy.zeros([ACTIONS])  # Create 1xACTIONS array (for choosing action to send)
         chosenAction = 0  # Do nothing by default
 
-        #print('test' + str(readoutEvaluated))  # Prints Q-Values at each step
+        #print(str(readoutEvaluated))  # Prints Q-Values at each step
 
         # Explore / Exploit decision
         if random.random() <= epsilon or tetrisObject.frameNumber <= OBSERVE:  # If we should explore...
@@ -555,27 +510,25 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
         else:
             print("Exploiting!")
             # Choose action greedily
-            print (readoutEvaluated)
-            chosenAction = action.argmax(readoutEvaluated)  # Set action to the largest value for the output layer when fed the input
+            chosenAction = numpy.argmax(readoutEvaluated)  # Set action to the largest value for the output layer when fed the input
             action[chosenAction] = 1  # Set the largest "action" to true
 
-        #print(printOutActions.get(chosenAction)) prints the action the agent chooses at each step
+        print(printOutActions.get(chosenAction))  # prints the action the agent chooses at each step
 
         # Scale Epsilon if done observing
         if epsilon > FINAL_EPSILON and cycleCounter > OBSERVE:  # If epsilon is not final and we're done observing...
             epsilon -= 0.002  # Subtract 0.002 from epsilon. This will reduce 2% from epsilon every 1000 timesteps...
 
-        # Run once per frame. This will populate Q values for each state and allow us to fill the replay memory
+        # Run once per frame. This will send the selected action to the game and give us our reward and then train the agent with our minibatch.
         for i in range(0, 1):
             # Run selected action and observe the reward
             actionToSend = action.argmax(axis=0)  # Get index of largest element...
-            print("Action selected: " + printOutActions.get(actionToSend))
+            #print("Action selected: " + printOutActions.get(action))
             frame, localScore, localTerminal = tetrisObject.handle_input(agentInput=actionToSend)  # Send selected action to game
             print("Reward: " + str(reward))
-            frame = frame.reshape([250, 502, 1])
+            frame = numpy.reshape(frame, (80, 80, 1))  # Add an extra dimension so that we can append it to the framestack
 
             frameStackNew = numpy.append(frame, frameStack[:, :, 0:3], axis=2)  # Append framestack to new frame
-            print(frameStackNew.shape)
             # frameStack = previous stack of frames, action = taken action, localScore = change in score (reward), frameStackNew = updated stack of frames, localTerminal = is game over?
             replayMemory.append((frameStack, action, localScore, frameStackNew, localTerminal))  # Store transition in replay memory as a tuple
 
@@ -585,8 +538,8 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
 
         if cycleCounter > OBSERVE and len(replayMemory) >= BATCH_SIZE:
             # Sample miniBatch
-
             minibatch = random.sample(replayMemory, BATCH_SIZE)  # Get BATCH_SIZE random samples from replayMemory
+
             # Get batch variables
             initialFrameBatch = [r[0] for r in minibatch]
             actionBatch = [r[1] for r in minibatch]
@@ -594,7 +547,6 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
             updatedFrameBatch = [r[3] for r in minibatch] # Returns
             yBatch = []  # Create blank list
 
-            # [4x125000]
             batchReadout = readout.eval(feed_dict={inputLayer: updatedFrameBatch})  # Get readout of final layer (Q Values) by feeding input layer the updated frames
 
             for i in range(0, len(minibatch)):
@@ -602,8 +554,6 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
                     yBatch.append(scoreBatch[i])
                 else:  # Otherwise append the score + GAMMA * the max value in the new Q Values for the updated frames
                     yBatch.append(scoreBatch[i] + GAMMA * numpy.max(batchReadout[i]))
-
-            actionBatch = numpy.transpose(actionBatch)  # Swap dimensions for use in cost function
 
             # Perform training step by feeding trainingStep
             trainingStep.run(feed_dict={y: yBatch,
@@ -620,7 +570,6 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
             saver.save(sess, 'savedNetworks/Tetris-dqn', global_step=cycleCounter)  # Save to directories savedNetworks folder
 
 if __name__ == "__main__":
-    pygame.init()
     sess = tf.InteractiveSession()
     input, readout, fullyConnected = createNetwork()
     initVars = tf.global_variables_initializer()
