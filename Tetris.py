@@ -22,7 +22,7 @@ level = 1  # Start on level 1
 frameName = 0  # Used for naming screenshots
 terminal = False  # Flag for GameOver
 FONT_PATH = "/System/Library/Fonts/Helvetica.dfont"  # Use C:\Windows\Fonts\Arial.ttf for Windows.
-FONT = pygame.font.Font(FONT_PATH, 24)
+FONT = pygame.font.Font(FONT_PATH, 12)
 
 class Piece:
     O = (((0, 0, 0, 0, 0),  (0, 0, 0, 0, 0),  (0, 0, 1, 1, 0),  (0, 0, 1, 1, 0),  (0, 0, 0, 0, 0)), ) * 4  # Square Tetromino
@@ -274,11 +274,9 @@ class Board:
     def resetBoard(self):
         print("Resetting game!")
         global level
-        global score
         global thetaScore
         level = 0
         thetaScore = -100
-        score = 0
 
         # Reset board
         self.board = []
@@ -303,6 +301,7 @@ class Tetris:
         pygame.event.pump()  # Needs to be called every frame so pygame can interact with OS
         global thetaScore
         global frameName
+        global score
         global FONT
 
         # Do nothing[0], rotate right[1], rotate left[2], move left[3], move right [4], drop piece to bottom[5].
@@ -337,19 +336,19 @@ class Tetris:
             img3.save(fileName, format='png')
             frameName += 1
 
-        # Set reward to the change in the score, reset thetaScore for next time
-        reward = thetaScore
+        reward = thetaScore  # Reward to return for this action
+        score += round(thetaScore / 10) # Track total reward. Divide by 10 to prevent huge score from being displayed in GUI
         thetaScore = 0
 
-        #Update GUI
-        """
+        # Update GUI to show total reward so far
+        font = pygame.font.Font(FONT_PATH, 12)
         white = (255, 255, 255)
         black = (0, 0, 0)
-        label = ("Score: " + str(score),  1, white, black)
-        self.surface.blit(, (0,  530))
-        """
+        label = font.render("Score: " + str(score),  1, white, black)
+        self.surface.blit(label, (0,  530))
 
-        #Tick game
+
+        # Tick game
         rect = (0, 0, 250, 500)
         self.surface.fill((0, 0, 0), rect)
         self.board.draw()
@@ -363,15 +362,15 @@ class Tetris:
         global level
         print("Run")
         global score
-        font = pygame.font.Font(FONT_PATH, 24)
+        font = pygame.font.Font(FONT_PATH, 12)
         pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
-        pygame.display.set_caption("Tetris V3.2")  # Set window title
+        pygame.display.set_caption("Tetris V3.21")  # Set window title
         white = (255, 255, 255)
         black = (0, 0, 0)
         label = font.render("Score: " + str(score),  1, white)
         self.surface.blit(label, (0,  530))
-        levelLabel = font.render("Level: " + str(level), 1, white, black)
-        self.surface.blit(levelLabel, (0, 500))
+        #levelLabel = font.render("Level: " + str(level), 1, white, black)
+        #self.surface.blit(levelLabel, (0, 500))
 
 
 def playGame(Tetris):
