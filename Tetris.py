@@ -21,8 +21,9 @@ thetaScore = 0  # Keep track of changes in score (used to reward agent)
 level = 1  # Start on level 1
 frameName = 0  # Used for naming screenshots
 terminal = False  # Flag for GameOver
+linesCleared = 0
 FONT_PATH = "/System/Library/Fonts/Helvetica.dfont"  # Use C:\Windows\Fonts\Arial.ttf for Windows.
-FONT = pygame.font.Font(FONT_PATH, 12)
+FONT = pygame.font.Font(FONT_PATH, 24)
 
 class Piece:
     O = (((0, 0, 0, 0, 0),  (0, 0, 0, 0, 0),  (0, 0, 1, 1, 0),  (0, 0, 1, 1, 0),  (0, 0, 0, 0, 0)), ) * 4  # Square Tetromino
@@ -188,11 +189,18 @@ class Board:
 
     def delete_lines(self):
         global thetaScore
+        global linesCleared
         remove = [y for y, row in enumerate(self.board) if all(row)]
-        thetaScore += len(remove) * 50
+        if len(remove) > 0:
+            thetaScore += len(remove) * 500
+            linesCleared += len(remove)
+            font = pygame.Font.font(FONT_PATH, 12)
+            label = font.render("Lines cleared" + str(linesCleared), 1, (255, 255, 255), (0, 0, 0))
+            self.surface.blit(label, (125, 530))
         for y in remove:
             self._delete_line(y)
 
+    """
     def score(self, scoreToAdd):
         global score
         global level
@@ -217,7 +225,7 @@ class Board:
         self.surface.blit(label, (0,  530))
         print(score)
         # self.levelUp()  # Every time score is updated see if we level up. Currently deprecated.
-    """
+
     # Currently deprecated as it may cause agent to learn less by emphasizing late-game actions.
     def levelUp(self):
         global level
@@ -246,7 +254,8 @@ class Board:
                 for x, block in enumerate(row):
                     if block:
                         #If there's a grid block to be drawn, draw it
-                        thetaScore += 3  # Full line = 30 points, clear line = 50 x # of lines
+                        print(x, y, row)
+                        thetaScore += sum(row) * x  # Full line = 30 points, clear line = 50 x # of lines
                         self.delete_lines()  # See if we cleared any lines
                         x += dx
                         x_pix, y_pix = self.pos_to_pixel(x, y)
@@ -276,7 +285,7 @@ class Board:
         global level
         global thetaScore
         level = 0
-        thetaScore = -100
+        thetaScore = -5000
 
         # Reset board
         self.board = []
@@ -364,11 +373,12 @@ class Tetris:
         global score
         font = pygame.font.Font(FONT_PATH, 12)
         pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
-        pygame.display.set_caption("Tetris V3.21")  # Set window title
+        pygame.display.set_caption("Tetris V3.22")  # Set window title
         white = (255, 255, 255)
-        black = (0, 0, 0)
         label = font.render("Score: " + str(score),  1, white)
         self.surface.blit(label, (0,  530))
+        label2 = font.render("Lines cleared: " + str(linesCleared), 1, white)
+        self.surface.blit(label2, (125, 530))
         #levelLabel = font.render("Level: " + str(level), 1, white, black)
         #self.surface.blit(levelLabel, (0, 500))
 
