@@ -190,12 +190,12 @@ class Board:
     def delete_lines(self):
         global thetaScore
         global linesCleared
+        global FONT
         remove = [y for y, row in enumerate(self.board) if all(row)]
         if len(remove) > 0:
             thetaScore += len(remove) * 500
             linesCleared += len(remove)
-            font = pygame.Font.font(FONT_PATH, 12)
-            label = font.render("Lines cleared" + str(linesCleared), 1, (255, 255, 255), (0, 0, 0))
+            label = FONT.render("Lines cleared" + str(linesCleared), 1, (255, 255, 255), (0, 0, 0))
             self.surface.blit(label, (125, 530))
         for y in remove:
             self._delete_line(y)
@@ -254,7 +254,7 @@ class Board:
                 for x, block in enumerate(row):
                     if block:
                         #If there's a grid block to be drawn, draw it
-                        print(x, y, row)
+                        #print(x, y, row)
                         thetaScore += sum(row) * x  # Full line = 30 points, clear line = 50 x # of lines
                         self.delete_lines()  # See if we cleared any lines
                         x += dx
@@ -373,7 +373,7 @@ class Tetris:
         global score
         font = pygame.font.Font(FONT_PATH, 12)
         pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
-        pygame.display.set_caption("Tetris V3.22")  # Set window title
+        pygame.display.set_caption("Tetris V3.23")  # Set window title
         white = (255, 255, 255)
         label = font.render("Score: " + str(score),  1, white)
         self.surface.blit(label, (0,  530))
