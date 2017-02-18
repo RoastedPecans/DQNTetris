@@ -12,17 +12,19 @@ from pygame.locals import *
 import random
 from PIL import Image
 import csv
+import time
 
 pygame.init()
 
 # Global Variables for game
 score = 0  # Total score
 thetaScore = 0  # Keep track of changes in score (used to reward agent)
+thetaScore2 = 0  # Used with thetaScore to get reward per frame
 level = 1  # Start on level 1
 frameName = 0  # Used for naming screenshots
 terminal = False  # Flag for GameOver
 linesCleared = 0
-FONT_PATH = "/System/Library/Fonts/Helvetica.dfont"  # Use C:\Windows\Fonts\Arial.ttf for Windows.
+FONT_PATH = "C:\Windows\Fonts\Arial.ttf"  # Use C:\Windows\Fonts\Arial.ttf for Windows, /System/Library/Fonts/Helvetica.dfont for Mac.
 FONT = pygame.font.Font(FONT_PATH, 24)
 
 class Piece:
@@ -82,6 +84,7 @@ class Board:
     COLLIDE_ERROR = {'no_error': 0,  'right_wall': 1, 'left_wall': 2, 'bottom': 3, 'overlap': 4}  # Dictionary for storing what kind of collision occurred
 
     def generate_piece(self):
+        thetaScore = thetaScore2 = 0
         self.piece = Piece()   # Set first piece to random piece per the Piece Class init function
         self.piece_x, self.piece_y = 3, 0   # Set to center
 
@@ -193,7 +196,8 @@ class Board:
         global FONT
         remove = [y for y, row in enumerate(self.board) if all(row)]
         if len(remove) > 0:
-            thetaScore += len(remove) * 500
+            thetaScore += len(remove) * 1000  # 1000 reward per line cleared
+            # Update GUI
             linesCleared += len(remove)
             label = FONT.render("Lines cleared" + str(linesCleared), 1, (255, 255, 255), (0, 0, 0))
             self.surface.blit(label, (125, 530))
@@ -225,7 +229,6 @@ class Board:
         self.surface.blit(label, (0,  530))
         print(score)
         # self.levelUp()  # Every time score is updated see if we level up. Currently deprecated.
-
     # Currently deprecated as it may cause agent to learn less by emphasizing late-game actions.
     def levelUp(self):
         global level
@@ -250,12 +253,12 @@ class Board:
         global thetaScore
         for y, row in enumerate(array2d):
             y += dy
+            if y > 12:
+                thetaScore += sum(row) * (y - 12)  # Give agent reward of 1 for every block in their line x the y (lower lines are higher y's)
             if y >= 2 and y < self.height:
                 for x, block in enumerate(row):
                     if block:
                         #If there's a grid block to be drawn, draw it
-                        #print(x, y, row)
-                        thetaScore += sum(row) * x  # Full line = 30 points, clear line = 50 x # of lines
                         self.delete_lines()  # See if we cleared any lines
                         x += dx
                         x_pix, y_pix = self.pos_to_pixel(x, y)
@@ -285,7 +288,7 @@ class Board:
         global level
         global thetaScore
         level = 0
-        thetaScore = -5000
+        thetaScore -= 5000
 
         # Reset board
         self.board = []
@@ -309,6 +312,7 @@ class Tetris:
     def handle_input(self, agentInput):
         pygame.event.pump()  # Needs to be called every frame so pygame can interact with OS
         global thetaScore
+        global thetaScore2
         global frameName
         global score
         global FONT
@@ -345,9 +349,12 @@ class Tetris:
             img3.save(fileName, format='png')
             frameName += 1
 
-        reward = thetaScore  # Reward to return for this action
-        score += round(thetaScore / 10) # Track total reward. Divide by 10 to prevent huge score from being displayed in GUI
-        thetaScore = 0
+        thetaScore = round(thetaScore)
+        reward = thetaScore - thetaScore2 # Reward to return for this action
+        score += round(reward / 10) # Track total reward. Divide by 10 to prevent huge score from being displayed in GUI
+
+        # Update thetaScore2 to be the same as thetaScore (to find difference in next frame) 
+        thetaScore2 = thetaScore
 
         # Update GUI to show total reward so far
         font = pygame.font.Font(FONT_PATH, 12)
@@ -373,7 +380,7 @@ class Tetris:
         global score
         font = pygame.font.Font(FONT_PATH, 12)
         pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
-        pygame.display.set_caption("Tetris V3.23")  # Set window title
+        pygame.display.set_caption("Tetris V3.3")  # Set window title
         white = (255, 255, 255)
         label = font.render("Score: " + str(score),  1, white)
         self.surface.blit(label, (0,  530))
