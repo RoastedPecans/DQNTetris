@@ -11,6 +11,7 @@ import numpy
 from pygame.locals import *
 import random
 from PIL import Image
+import csv
 
 pygame.init()
 
@@ -21,7 +22,7 @@ level = 1  # Start on level 1
 frameName = 0  # Used for naming screenshots
 terminal = False  # Flag for GameOver
 FONT_PATH = "/System/Library/Fonts/Helvetica.dfont"  # Use C:\Windows\Fonts\Arial.ttf for Windows.
-
+FONT = pygame.font.Font(FONT_PATH, 24)
 
 class Piece:
     O = (((0, 0, 0, 0, 0),  (0, 0, 0, 0, 0),  (0, 0, 1, 1, 0),  (0, 0, 1, 1, 0),  (0, 0, 0, 0, 0)), ) * 4  # Square Tetromino
@@ -186,10 +187,9 @@ class Board:
             self.board[y] = list(self.board[y-1])
 
     def delete_lines(self):
+        global thetaScore
         remove = [y for y, row in enumerate(self.board) if all(row)]
-        tempScore = len(remove)  # tempScore equal to the amount of lines to remove
-        if tempScore > 0:  # Only update score if there's a reason to
-            self.score(tempScore)
+        thetaScore += len(remove) * 50
         for y in remove:
             self._delete_line(y)
 
@@ -239,11 +239,15 @@ class Board:
         return sum(self.board[0]) > 0 or sum(self.board[1]) > 0
 
     def draw_blocks(self, array2d, color=(0, 0, 255),  dx=0,  dy=0):
+        global thetaScore
         for y, row in enumerate(array2d):
             y += dy
             if y >= 2 and y < self.height:
                 for x, block in enumerate(row):
                     if block:
+                        #If there's a grid block to be drawn, draw it
+                        thetaScore += 3  # Full line = 30 points, clear line = 50 x # of lines
+                        self.delete_lines()  # See if we cleared any lines
                         x += dx
                         x_pix, y_pix = self.pos_to_pixel(x, y)
                          # draw block
@@ -276,8 +280,9 @@ class Board:
         thetaScore = -100
         score = 0
 
+        # Reset board
         self.board = []
-        for x in range(self.height):   # For all "points" on board, set to 0
+        for x in range(self.height):
             self.board.append([0] * self.width)
 
 
@@ -298,6 +303,7 @@ class Tetris:
         pygame.event.pump()  # Needs to be called every frame so pygame can interact with OS
         global thetaScore
         global frameName
+        global FONT
 
         # Do nothing[0], rotate right[1], rotate left[2], move left[3], move right [4], drop piece to bottom[5].
         if agentInput == 0:
@@ -335,6 +341,14 @@ class Tetris:
         reward = thetaScore
         thetaScore = 0
 
+        #Update GUI
+        """
+        white = (255, 255, 255)
+        black = (0, 0, 0)
+        label = ("Score: " + str(score),  1, white, black)
+        self.surface.blit(, (0,  530))
+        """
+
         #Tick game
         rect = (0, 0, 250, 500)
         self.surface.fill((0, 0, 0), rect)
@@ -351,7 +365,7 @@ class Tetris:
         global score
         font = pygame.font.Font(FONT_PATH, 24)
         pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
-        pygame.display.set_caption("Tetris V3.1")  # Set window title
+        pygame.display.set_caption("Tetris V3.2")  # Set window title
         white = (255, 255, 255)
         black = (0, 0, 0)
         label = font.render("Score: " + str(score),  1, white)
@@ -501,19 +515,20 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
 
         # Explore / Exploit decision
         if random.random() <= epsilon or tetrisObject.frameNumber <= OBSERVE:  # If we should explore...
-            print("Exploring!")
+            #print("Exploring!")
             # Choose action randomly
             chosenAction = random.randint(0, len(action))  # Choose random action from list of actions..
             if chosenAction == len(action):
                 chosenAction = chosenAction - 1  # Prevents index out of bounds as len(action) is non-zero indexed while lists are zero-indexed
             action[chosenAction] = 1  # Set that random action to 1 (for true)
         else:
-            print("Exploiting!")
+            #print("Exploiting!")
             # Choose action greedily
-            chosenAction = numpy.argmax(readoutEvaluated)  # Set action to the largest value for the output layer when fed the input
+            chosenAction = numpy.argmax(readoutEvaluated)  # Set chosenAction to the index of the largest Q-value
             action[chosenAction] = 1  # Set the largest "action" to true
 
         print(printOutActions.get(chosenAction))  # prints the action the agent chooses at each step
+
 
         # Scale Epsilon if done observing
         if epsilon > FINAL_EPSILON and cycleCounter > OBSERVE:  # If epsilon is not final and we're done observing...
@@ -525,7 +540,7 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
             actionToSend = action.argmax(axis=0)  # Get index of largest element...
             #print("Action selected: " + printOutActions.get(action))
             frame, localScore, localTerminal = tetrisObject.handle_input(agentInput=actionToSend)  # Send selected action to game
-            print("Reward: " + str(reward))
+            print("Reward: " + str(localScore))
             frame = numpy.reshape(frame, (80, 80, 1))  # Add an extra dimension so that we can append it to the framestack
 
             frameStackNew = numpy.append(frame, frameStack[:, :, 0:3], axis=2)  # Append framestack to new frame
