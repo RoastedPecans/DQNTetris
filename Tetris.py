@@ -9,7 +9,6 @@ from collections import deque  # Deque used for replay memory
 import pygame
 import numpy
 from pygame.locals import *
-
 import random
 from PIL import Image
 import csv
@@ -25,6 +24,7 @@ level = 1  # Start on level 1
 frameName = 0  # Used for naming screenshots
 terminal = False  # Flag for GameOver
 linesCleared = 0
+MAX_REWARD = 0
 FONT_PATH = "/System/Library/Fonts/Helvetica.dfont"  # Use C:\Windows\Fonts\Arial.ttf for Windows, /System/Library/Fonts/Helvetica.dfont for Mac.
 FONT = pygame.font.Font(FONT_PATH, 12)
 
@@ -175,7 +175,7 @@ class Board:
 
     # Same as drop_piece but won't lag the program when using space to fully drop piece
     def drop_piece_fully(self):
-        while self._can_drop_piece():
+        if self._can_drop_piece():
             self.move_piece(dx=0,  dy=1)
         else:
             self.absorb_piece()
@@ -244,24 +244,15 @@ class Board:
             self.surface.blit(levelLabel, (0, 500))
     """
 
-    def score(self):
-        global thetaScore
-        for y, row in enumerate(self.board):
-            if y > 12:
-                thetaScore += sum(row) * (y - 12)  # Give agent reward of 1 for every block in their line x the y (lower lines are higher y's)
-
     def game_over(self):
         return sum(self.board[0]) > 0 or sum(self.board[1]) > 0
 
     def draw_blocks(self, array2d, color=(0, 0, 255),  dx=0,  dy=0):
         global thetaScore
-        global thetaScore2
-        localScore = 0
         for y, row in enumerate(array2d):
             y += dy
-            thetaScore2 = thetaScore
-            localScore += (sum(row) * y)  # Give score for every block in row times the row height (lower is bigger)
-            thetaScore += localScore - thetaScore2
+            if y > 5:
+                thetaScore += (sum(row) * (y - 5)) / 10  # Give agent reward of 1 for every block in their line x the y (lower lines are higher y's)
             if y >= 2 and y < self.height:
                 for x, block in enumerate(row):
                     if block:
@@ -291,13 +282,14 @@ class Board:
         self.drop_piece()
 
     def resetBoard(self):
-        #print("Resetting game!")
+        print("Resetting game!")
         global level
         global thetaScore
         global terminal
+
         terminal = True
         level = 0
-        thetaScore -= 5000
+        thetaScore -= 2500
 
         # Reset board
         self.board = []
@@ -325,14 +317,16 @@ class Tetris:
         global frameName
         global score
         global FONT
-        global MAX_REWARD
         global terminal
+        global MAX_REWARD
 
         if terminal:
             terminal = False
 
         # Do nothing[0], rotate right[1], rotate left[2], move left[3], move right [4], drop piece to bottom[5].
-        if agentInput == 1:
+        if agentInput == 0:
+            print("Do nothing")
+        elif agentInput == 1:
             self.board.rotate_piece()
         elif agentInput == 2:
             self.board.rotate_piece(clockwise=False)
@@ -362,19 +356,21 @@ class Tetris:
             frameName += 1
 
         thetaScore = round(thetaScore)
-        reward = thetaScore # Reward to return for this action
+        reward = thetaScore - thetaScore2  # Reward to return for this action
+        score += reward  # Track total reward.
 
+        # Update thetaScore2 to be the same as thetaScore (to find difference in next frame)
+        thetaScore2 = thetaScore
+
+        # Update GUI to show total reward so far
         white = (255, 255, 255)
         black = (0, 0, 0)
-        
+
         if reward > MAX_REWARD:
             MAX_REWARD = reward
             label = FONT.render("Max Reward: " + str(MAX_REWARD), 1, white, black)
             self.surface.blit(label, (0, 530))
-            
-        score += round(reward / 10) # Track total reward. Divide by 10 to prevent huge score from being displayed in GUI
 
-        # Update GUI to show total reward so far
         label = FONT.render("Score: " + str(score),  1, white, black)
         self.surface.blit(label, (0,  510))
 
@@ -393,13 +389,13 @@ class Tetris:
         global level
         print("Run")
         global score
-        global FONT
+        font = pygame.font.Font(FONT_PATH, 12)
         pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
-        pygame.display.set_caption("Tetris V3.4")  # Set window title
+        pygame.display.set_caption("Tetris V3.5")  # Set window title
         white = (255, 255, 255)
-        label = FONT.render("Score: " + str(score),  1, white)
+        label = font.render("Score: " + str(score),  1, white)
         self.surface.blit(label, (0,  510))
-        label2 = FONT.render("Lines cleared: " + str(linesCleared), 1, white)
+        label2 = font.render("Lines cleared: " + str(linesCleared), 1, white)
         self.surface.blit(label2, (125, 510))
         #levelLabel = font.render("Level: " + str(level), 1, white, black)
         #self.surface.blit(levelLabel, (0, 500))
@@ -419,7 +415,6 @@ OBSERVE = 10000  # Observe game for 10000 frames. This fills the replay memory b
 REPLAY_MEMORY = 10000  # Size of ReplayMemory
 BATCH_SIZE = 32  # Size of minibatch
 GAMMA = 0.99  # Decay rate of past observations
-MAX_REWARD = 0 # Max reward received 
 
 tetrisObject = Tetris()  # Create new Tetris instance
 
@@ -523,7 +518,6 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
     if savePoint and savePoint.model_checkpoint_path:
         saver.restore(sess=sess, save_path=savePoint.model_checkpoint_path)
         print("Successfully restored: " + savePoint.model_checkpoint_path)
-        epsilon = FINAL_EPSILON
     else:
         print("Could not load from save")
 
@@ -560,7 +554,7 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
             chosenAction = numpy.argmax(readoutEvaluated)  # Set chosenAction to the index of the largest Q-value
             action[chosenAction] = 1  # Set the largest "action" to true
 
-        #print(printOutActions.get(chosenAction))  # prints the action the agent chooses at each step
+        print(printOutActions.get(chosenAction))  # prints the action the agent chooses at each step
 
 
         # Scale Epsilon if done observing
@@ -573,7 +567,7 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
             actionToSend = action.argmax(axis=0)  # Get index of largest element...
             #print("Action selected: " + printOutActions.get(action))
             frame, localScore, localTerminal = tetrisObject.handle_input(agentInput=actionToSend)  # Send selected action to game
-            #print("Reward: " + str(localScore))
+            print("Reward: " + str(localScore))
             frame = numpy.reshape(frame, (80, 80, 1))  # Add an extra dimension so that we can append it to the framestack
 
             frameStackNew = numpy.append(frame, frameStack[:, :, 0:3], axis=2)  # Append framestack to new frame
