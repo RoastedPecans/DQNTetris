@@ -694,6 +694,7 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
             gameParameters.append(datetime.datetime.now() - startTime)  # Save the running time for this training
             gameParameters = numpy.array(gameParameters)  # Convert to numpy array for saving
             numpy.save('gameStatistics', gameParameters)
+            
 
 if __name__ == "__main__":
     sess = tf.InteractiveSession()
