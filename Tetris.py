@@ -1,7 +1,7 @@
 # Program Name: Tetris.py
 # Program Purpose: Tetris built in Python for use with a DQN that will learn to play
 # Date Started: 1/3/17
-# Last Modified: 2/16/17
+# Last Modified: 3/18/17
 # Programmer: Connor
 
 import tensorflow as tf
@@ -9,24 +9,33 @@ from collections import deque  # Deque used for replay memory
 import pygame
 import numpy
 from pygame.locals import *
+from pygame import event
 import random
-from PIL import Image
-import csv
 import time
+from PIL import Image
+from copy import deepcopy
+import datetime
 
 pygame.init()
+pygame.mixer.init()
+linesClearedSound = pygame.mixer.Sound("dingSoundEffect.wav")
 
 # Global Variables for game
 score = 0  # Total score
-thetaScore = 0  # Keep track of changes in score (used to reward agent)
-thetaScore2 = 0  # Used with thetaScore to get reward per frame
+thetaScore = 1000  # Keep track of changes in score (used to reward agent)
+thetaScore2 = 1000  #  Use to make one reward per piece
 level = 1  # Start on level 1
 frameName = 0  # Used for naming screenshots
 terminal = False  # Flag for GameOver
 linesCleared = 0
 MAX_REWARD = 0
-FONT_PATH = "/System/Library/Fonts/Helvetica.dfont"  # Use C:\Windows\Fonts\Arial.ttf for Windows, /System/Library/Fonts/Helvetica.dfont for Mac.
+reward = 0
+newBoard = []
+gamesPlayed = 0
+FONT_PATH = "C:\Windows\Fonts\Arial.ttf"  # Use C:\Windows\Fonts\Arial.ttf for Windows, /System/Library/Fonts/Helvetica.dfont for Mac.
 FONT = pygame.font.Font(FONT_PATH, 12)
+
+startTime = datetime.datetime.now()
 
 class Piece:
     O = (((0, 0, 0, 0, 0),  (0, 0, 0, 0, 0),  (0, 0, 1, 1, 0),  (0, 0, 1, 1, 0),  (0, 0, 0, 0, 0)), ) * 4  # Square Tetromino
@@ -82,14 +91,54 @@ class Piece:
 
 
 class Board:
+
+    # Get board rows for earlier frame, compare to new frame using bitwise (same (1 +1) = 0), new will be 1 + 0 = 1
     COLLIDE_ERROR = {'no_error': 0,  'right_wall': 1, 'left_wall': 2, 'bottom': 3, 'overlap': 4}  # Dictionary for storing what kind of collision occurred
 
-    def generate_piece(self):
-        thetaScore = thetaScore2 = 0
+    def generatePieceWithScore(self):
+        # Update to current board for next loop, but feed old one for comparision this loop
+
         self.piece = Piece()   # Set first piece to random piece per the Piece Class init function
         self.piece_x, self.piece_y = 3, 0   # Set to center
 
+    def calcScore(self):
+        global thetaScore, thetaScore2, newBoard, score, FONT, MAX_REWARD, reward
+
+        # Create blank board to hold changes between frames
+        thetaBoard = []
+        for i in range(self.height):
+            thetaBoard.append([0] * self.width)
+
+        # Compare two boards to calculate reward
+        for i in range(self.height):
+            for j in range(self.width):
+                if newBoard[i][j] is not self.board[i][j] and i != 0:
+                    thetaBoard[i][j] = (1 / i) * 50  # Where there has been a change, set index to value
+
+        # Create copy by value, not reference
+        newBoard = deepcopy(self.board)
+        thetaScore -= round((numpy.sum(thetaBoard)))  # Calculate total score for that piece
+
+        #print('REWARD: ' + str(thetaScore))
+
+        # Update GUI to show total reward so far
+        white = (255, 255, 255)
+        black = (0, 0, 0)
+
+        if thetaScore > MAX_REWARD:
+            MAX_REWARD = thetaScore
+            label = FONT.render("Max Reward: " + str(MAX_REWARD), 1, white, black)
+            self.surface.blit(label, (0, 530))
+
+        score += round(thetaScore)  # Keep track of total reward earned
+        reward = thetaScore
+        
+        label = FONT.render("Score: " + str(score),  1, white, black)
+        self.surface.blit(label, (0,  510))
+        thetaScore2 = thetaScore
+
     def __init__(self, surface):
+        global newBoard
         self.surface = surface
         self.width = 10   # Width of game board
         self.height = 22   # Height of game board
@@ -97,15 +146,15 @@ class Board:
         self.board = []
         for x in range(self.height):   # For all "points" on board, set to 0
             self.board.append([0] * self.width)
-        self.generate_piece()   # Generate first piece
-        self.font = pygame.font.Font(FONT_PATH, 24)
+            newBoard.append([0] * self.width)
+        self.generatePieceWithScore()   # Generate first piece
 
     def absorb_piece(self):
         for y, row in enumerate(self.piece):  # For all rows
             for x, block in enumerate(row):
                 if block:
                     self.board[y+self.piece_y][x+self.piece_x] = block
-        self.generate_piece()
+        self.generatePieceWithScore()
 
     def _block_collide_with_board(self, x, y):
         if x < 0:
@@ -164,23 +213,6 @@ class Board:
     def _can_drop_piece(self):
         return self._can_move_piece(dx=0,  dy=1)
 
-    def drop_piece(self):
-        if self.game_over():
-            self.resetBoard()  # If game over, reset board
-        if self._can_drop_piece():
-            self.move_piece(dx=0,  dy=1)
-        else:
-            self.absorb_piece()
-            self.delete_lines()
-
-    # Same as drop_piece but won't lag the program when using space to fully drop piece
-    def drop_piece_fully(self):
-        if self._can_drop_piece():
-            self.move_piece(dx=0,  dy=1)
-        else:
-            self.absorb_piece()
-            self.delete_lines()
-
     def rotate_piece(self, clockwise=True):
         self._try_rotate_piece(clockwise)
 
@@ -192,12 +224,11 @@ class Board:
             self.board[y] = list(self.board[y-1])
 
     def delete_lines(self):
-        global thetaScore
-        global linesCleared
-        global FONT
+        global thetaScore, linesCleared, FONT
         remove = [y for y, row in enumerate(self.board) if all(row)]
         if len(remove) > 0:
-            thetaScore += len(remove) * 1000  # 1000 reward per line cleared
+            thetaScore += len(remove) * 10000  # 10000 reward per line cleared
+            linesClearedSound.play()  # Play sound!
             # Update GUI
             linesCleared += len(remove)
             label = FONT.render("Lines cleared: " + str(linesCleared), 1, (255, 255, 255), (0, 0, 0))
@@ -248,11 +279,8 @@ class Board:
         return sum(self.board[0]) > 0 or sum(self.board[1]) > 0
 
     def draw_blocks(self, array2d, color=(0, 0, 255),  dx=0,  dy=0):
-        global thetaScore
         for y, row in enumerate(array2d):
             y += dy
-            if y > 5:
-                thetaScore += (sum(row) * (y - 5)) / 10  # Give agent reward of 1 for every block in their line x the y (lower lines are higher y's)
             if y >= 2 and y < self.height:
                 for x, block in enumerate(row):
                     if block:
@@ -276,104 +304,80 @@ class Board:
         self.draw_blocks(self.piece, dx=self.piece_x, dy=self.piece_y)  # Draws the piece
         self.draw_blocks(self.board)  # Redraws the whole board
 
-    def full_drop_piece(self):
-        while self._can_drop_piece():
-            self.drop_piece_fully()
-        self.drop_piece()
+    def drop_piece(self):
+        if self.game_over():
+            self.resetBoard()
+        if self._can_drop_piece():
+            self.move_piece(dx=0, dy=1)
+        else:
+            self.absorb_piece()
+            self.delete_lines()
 
     def resetBoard(self):
         print("Resetting game!")
-        global level
-        global thetaScore
-        global terminal
-
+        global level, terminal, newBoard, FONT, gamesPlayed, thetaScore, thetaScore2
         terminal = True
-        level = 0
-        thetaScore -= 2500
 
-        # Reset board
+        thetaScore = 1000
+        thetaScore2 = 1000
+        
+        gamesPlayed += 1
+        label = FONT.render('Games Played: ' + str(gamesPlayed), 1, (255, 255, 255), (0, 0, 0))
+        self.surface.blit(label, (125, 530))
+        
+        # Reset boards
         self.board = []
+        newBoard = []
         for x in range(self.height):
             self.board.append([0] * self.width)
+            newBoard.append([0] * self.width)
 
 
 class Tetris:
     DROP_EVENT = USEREVENT + 1
-    save = False  # Set to true to save frame-by-frame screenshots to project directory (good for logging)
-    show = False  # Set to true to display frame-by-frame screenshots (CREATES MANY WINDOWS!)
     frameNumber = 0  # Will be used to count number of frames.
     frameStack = []  # Will be used to hold sequences of 4 frames
 
     def __init__(self):
-        self.surface = pygame.display.set_mode((250,  550))  # Set dimensions of game window. Creates a Surface
+        self.surface = pygame.display.set_mode((250, 550))  # Set dimensions of game window. Creates a Surface
         self.clock = pygame.time.Clock()  # Create game clock
         self.board = Board(self.surface)  # Create board for Tetris pieces
         pygame.display.update()
 
     def handle_input(self, agentInput):
         pygame.event.pump()  # Needs to be called every frame so pygame can interact with OS
-        global thetaScore
-        global thetaScore2
-        global frameName
-        global score
-        global FONT
-        global terminal
-        global MAX_REWARD
-
+        global thetaScore, thetaScore2, frameName, score, FONT, terminal, MAX_REWARD, reward
+        
+        # Before running action set terminal (game over) to False
         if terminal:
             terminal = False
 
         # Do nothing[0], rotate right[1], rotate left[2], move left[3], move right [4], drop piece to bottom[5].
-        if agentInput == 0:
-            print("Do nothing")
-        elif agentInput == 1:
-            self.board.rotate_piece()
-        elif agentInput == 2:
-            self.board.rotate_piece(clockwise=False)
-        elif agentInput == 3:
+        if agentInput[1] == 1:
             self.board.move_piece(-1, 0)
-        elif agentInput == 4:
+        elif agentInput[2] == 1:
+            self.board.rotate_piece(clockwise=False)
+        elif agentInput[3] == 1:
             self.board.move_piece(1, 0)
-        elif agentInput == 5:
-            self.board.drop_piece_fully()
-
+        elif agentInput[4] == 1:
+            self.board.rotate_piece(clockwise=True)
+        
         self.board.drop_piece()  # Drop piece after agent manipulates it
         tetrisObject.frameNumber += 1  # Increment frameNumber, every 4 frames send stacked frames to DQN
 
-        # Get image data as string, convert to image, resize image, convert to 8-bit black and white.
-        img = pygame.image.tostring(self.surface, 'RGB')
-        img3 = Image.frombytes('RGB', (250, 502), img)
-        img3 = img3.resize([80, 80])
-        img3 = img3.convert(mode='L')
+        self.board.calcScore()
+        
+        # Get image data from game screen using pygame
+        frame = pygame.surfarray.array3d(pygame.display.get_surface())
 
-        frame = numpy.asarray(img3)  # Create numpy array of pixel data
+        # Create screen as PIL Image without GUI to reduce proccessing
+        img = Image.fromarray(frame[:, :500, :])
 
-        if tetrisObject.show:  # Set flag to show images as they are created
-            img3.show()
-        if tetrisObject.save:  # Set flag to save images to project directory with a random name
-            fileName = "test" + str(frameName) + ".png"  # Create sequential fileName to save image
-            img3.save(fileName, format='png')
-            frameName += 1
+        # Resize to neural net dimensions and convert to 8-bit black and White ('L') for reduced proccessing
+        frame = img.resize((50, 50))
+        frame = frame.convert(mode='L')
 
-        thetaScore = round(thetaScore)
-        reward = thetaScore - thetaScore2  # Reward to return for this action
-        score += reward  # Track total reward.
-
-        # Update thetaScore2 to be the same as thetaScore (to find difference in next frame)
-        thetaScore2 = thetaScore
-
-        # Update GUI to show total reward so far
-        white = (255, 255, 255)
-        black = (0, 0, 0)
-
-        if reward > MAX_REWARD:
-            MAX_REWARD = reward
-            label = FONT.render("Max Reward: " + str(MAX_REWARD), 1, white, black)
-            self.surface.blit(label, (0, 530))
-
-        label = FONT.render("Score: " + str(score),  1, white, black)
-        self.surface.blit(label, (0,  510))
-
+        imageData = numpy.asarray(frame)
 
         # Tick game
         rect = (0, 0, 250, 500)
@@ -382,24 +386,36 @@ class Tetris:
         pygame.display.update()
         self.clock.tick(60)  # Set game speed
 
-        return frame, reward, terminal
+        # After running action see if gameOver is true
+        if terminal:
+            reward = -1000
+            score -= 1000
+
+        running = False
+
+        # Pausing functionality...
+        events = pygame.event.get()
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = True
+
+        while running:
+            events = pygame.event.get()
+            for event in events:
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
+                        
+        
+
+        return imageData, reward, terminal
 
     def run(self):
         # Set-up variables and defaults for game...
-        global level
-        print("Run")
-        global score
-        font = pygame.font.Font(FONT_PATH, 12)
+        global level, score
         pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
-        pygame.display.set_caption("Tetris V3.5")  # Set window title
-        white = (255, 255, 255)
-        label = font.render("Score: " + str(score),  1, white)
-        self.surface.blit(label, (0,  510))
-        label2 = font.render("Lines cleared: " + str(linesCleared), 1, white)
-        self.surface.blit(label2, (125, 510))
-        #levelLabel = font.render("Level: " + str(level), 1, white, black)
-        #self.surface.blit(levelLabel, (0, 500))
-
+        pygame.display.set_caption("Tetris V4.1")  # Set window title
 
 def playGame(Tetris):
     Tetris.run()
@@ -408,13 +424,13 @@ def playGame(Tetris):
 
 # DQN Code Begins here:
 # Hyperparameters
-ACTIONS = 6  # Do nothing[0], rotate right[1], rotate left[2], move left[3], move right [4], drop piece to bottom[5].
+ACTIONS = 5  # Do nothing[0], rotate right[1], rotate left[2], move left[3], move right [4], drop piece to bottom[5].
 INIT_EPSILON = 1  # Starting epsilon (for exploring). This will make the agent start by choosing an exploring action constantly.
-FINAL_EPSILON = 0.05  # Final epsilon (final % chance to take an exploring action)
-OBSERVE = 10000  # Observe game for 10000 frames. This fills the replay memory before the agent can take action
-REPLAY_MEMORY = 10000  # Size of ReplayMemory
+FINAL_EPSILON = 0.03  # Final epsilon (final % chance to take an exploring action)
+OBSERVE = 25000  # Observe game for 10000 frames. This fills the replay memory before the agent can take action
+REPLAY_MEMORY = 25000  # Size of ReplayMemory
 BATCH_SIZE = 32  # Size of minibatch
-GAMMA = 0.99  # Decay rate of past observations
+GAMMA = 0.02 # Decay rate of past observations
 
 tetrisObject = Tetris()  # Create new Tetris instance
 
@@ -455,7 +471,7 @@ def createNetwork():
     layerThreeWeights = createWeight([3, 3, 64, 64])  # Output Tensor is 3x3x64x64 for layer three. This will be the size of the layer 3 convolution.
     layerThreeBias = createBias([64])  # Creates a constant tensor with dimensionality of 64
 
-    weights_fc1 = createWeight([1600, 512])  # Output tensor will be 1600 x 512. Creates weights for fully connected ReLU layer.
+    weights_fc1 = createWeight([1024, 512])  # Output tensor will be 1600 x 512. Creates weights for fully connected ReLU layer.
     bias_fc1 = createBias([512])  # Create bias for fully connected layer
 
     weights_fc2 = createWeight([512, ACTIONS])  # Creates weights for fullyConnectedLayer to Readout Layer.
@@ -464,7 +480,7 @@ def createNetwork():
     # Create layers below...
     # Create Input Layer
     # Input image is 80x80 and we feed in 4 images at once...
-    input = tf.placeholder("float", [None, 80, 80, 4])  # Creates a tensor that will always be fed a tensor of floats 80x80x4 (input size)
+    input = tf.placeholder("float", [None, 50, 50, 4])  # Creates a tensor that will always be fed a tensor of floats 80x80x4 (input size)
 
     # The hidden layers will have a rectified linear activation function (ReLU)
     # Create first convolution (hidden layer one) by using the input and layerOneWeights and then adding the Bias
@@ -478,7 +494,7 @@ def createNetwork():
     conv3 = tf.nn.relu(createConvolution(conv2, layerThreeWeights, stride=1) + layerThreeBias)
 
     # Reshape third layer convolution into a 1-d Tensor (basically a list or array)
-    conv3Flat = tf.reshape(conv3, [-1, 1600])  # Use 1600 for use with weights_fc1
+    conv3Flat = tf.reshape(conv3, [-1, 1024])  # Use 1600 for use with weights_fc1
 
     hiddenFullyConnceted = tf.nn.relu(tf.matmul(conv3Flat, weights_fc1) + bias_fc1)  # Creates final hidden layer with 256 fully connected ReLU nodes
 
@@ -487,9 +503,13 @@ def createNetwork():
 
     return input, readout, hiddenFullyConnceted
 
-
 def trainNetwork(inputLayer, readout, fullyConnected, sess):
-    global tetrisObject
+    global tetrisObject, debugCounter, score, linesCleared, MAX_REWARD, gamesPlayed, FONT, startTime
+    epsilon = 0
+    cycleCounter = 0
+
+    trainingTime = datetime.datetime.now()
+
     printOutActions = {0 : "Do Nothing", 1 : "Rotate Right", 2 : "Rotate Left", 3 : "Move Left", 4 : "Move Right", 5 : "Drop Piece"}
     # inputLayer is the inputLayer (duh), hiddenFullyConnected is the fully connected ReLU layer (second to last layer),
     # readout is the readout from the final layer (Q Values) and sess is the TensorFlow session
@@ -514,63 +534,93 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
     sess.run(tf.global_variables_initializer())  # Initialize all global variables
     savePoint = tf.train.get_checkpoint_state('savedNetworks')  # If the checkpoint file in savedNetworks directory contains a valid CheckPointState, return it.
 
-    # If CheckPointState exists and path exists, restore it
+    # If CheckPointState exists and path exists, restore it along with the replayMemory and
     if savePoint and savePoint.model_checkpoint_path:
+        white = (255, 255, 255)
+        black = (0, 0, 0)
+
+        # Restore network weights
         saver.restore(sess=sess, save_path=savePoint.model_checkpoint_path)
-        print("Successfully restored: " + savePoint.model_checkpoint_path)
+
+        # Restore gameStats (score, games Played, max reward, lines cleared)
+        gameParametersLoad = numpy.load('gameStatistics.npy')
+        score = gameParametersLoad[0]
+        linesCleared = gameParametersLoad[1]
+        MAX_REWARD = gameParametersLoad[2]
+        gamesPlayed = gameParametersLoad[3]
+        #trainingTime += gameParametersLoad[4]
+
+        # Update GUI
+        label = FONT.render("Max Reward: " + str(MAX_REWARD), 1, white, black)
+        tetrisObject.surface.blit(label, (0, 530))
+        label = FONT.render("Score: " + str(score),  1, white, black)
+        tetrisObject.surface.blit(label, (0,  510))
+        label = FONT.render('Games Played: ' + str(gamesPlayed), 1, white, black)
+        tetrisObject.surface.blit(label, (125, 530))
+        label = FONT.render("Lines cleared: " + str(linesCleared), 1, white, black)
+        tetrisObject.surface.blit(label, (125, 510))
+
+        # Restore replayMemory and set network hyperparameters as if we were done observing/exploring
+        replayMemory = numpy.load('replayMemory.npy')
+        replayMemory = deque(replayMemory)  # Convert back into deque Object
+        epsilon = FINAL_EPSILON
+        cycleCounter = OBSERVE + 1
+        print("Successfully restored previous session: " + savePoint.model_checkpoint_path)
     else:
         print("Could not load from save")
+        cycleCounter = 0
+        epsilon = INIT_EPSILON  # Set initial explore/exploit rate
 
-    doNothing = 0  # Send do_nothing action by default
+    doNothing = [1, 0, 0, 0, 0, 0]  # Send do_nothing action by default for first frame
 
-    epsilon = INIT_EPSILON
+    # imageData = image data from game, reward = recieved reward, terminal = gameOver flag.
+    imageData, reward, terminal = tetrisObject.handle_input(agentInput=doNothing)
 
-    imageData, reward, terminal = tetrisObject.handle_input(agentInput=doNothing)   # imageData = image data from game, reward = recieved reward, terminal = gameOver flag.
-
-    frameStack = numpy.stack((imageData, imageData, imageData, imageData), axis=2)  # Create inital stack of images for feeding. We will append new frames to this.
-    cycleCounter = 0  # Used to count frames
+    # Stack 4 copies of the first frame into a 3D array on a new axis
+    frameStack = numpy.stack((imageData, imageData, imageData, imageData), axis=2)
 
     # Run forever - this is the main code
     while True:
-
         readoutEvaluated = readout.eval(feed_dict={inputLayer: [frameStack]})[0]  # readoutEvaluated is equal to the evaluation of the output layer (Q values) when feeding the input layer the newest frame
 
         action = numpy.zeros([ACTIONS])  # Create 1xACTIONS array (for choosing action to send)
         chosenAction = 0  # Do nothing by default
 
-        #print(str(readoutEvaluated))  # Prints Q-Values at each step
-
         # Explore / Exploit decision
         if random.random() <= epsilon or tetrisObject.frameNumber <= OBSERVE:  # If we should explore...
-            #print("Exploring!")
+            print("Exploring!")
             # Choose action randomly
             chosenAction = random.randint(0, len(action))  # Choose random action from list of actions..
             if chosenAction == len(action):
                 chosenAction = chosenAction - 1  # Prevents index out of bounds as len(action) is non-zero indexed while lists are zero-indexed
             action[chosenAction] = 1  # Set that random action to 1 (for true)
         else:
-            #print("Exploiting!")
+            print("Exploiting!")
             # Choose action greedily
             chosenAction = numpy.argmax(readoutEvaluated)  # Set chosenAction to the index of the largest Q-value
             action[chosenAction] = 1  # Set the largest "action" to true
-
-        print(printOutActions.get(chosenAction))  # prints the action the agent chooses at each step
+            
+        #print(printOutActions.get(chosenAction))  # prints the action the agent chooses at each step
 
 
         # Scale Epsilon if done observing
         if epsilon > FINAL_EPSILON and cycleCounter > OBSERVE:  # If epsilon is not final and we're done observing...
-            epsilon -= 0.002  # Subtract 0.002 from epsilon. This will reduce 2% from epsilon every 1000 timesteps...
+            epsilon -= 0.0002  # Subtract 0.002 from epsilon. This will reduce 2% from epsilon every 1000 timesteps...
 
         # Run once per frame. This will send the selected action to the game and give us our reward and then train the agent with our minibatch.
         for i in range(0, 1):
             # Run selected action and observe the reward
-            actionToSend = action.argmax(axis=0)  # Get index of largest element...
-            #print("Action selected: " + printOutActions.get(action))
-            frame, localScore, localTerminal = tetrisObject.handle_input(agentInput=actionToSend)  # Send selected action to game
-            print("Reward: " + str(localScore))
-            frame = numpy.reshape(frame, (80, 80, 1))  # Add an extra dimension so that we can append it to the framestack
+            frame, localScore, localTerminal = tetrisObject.handle_input(agentInput=action)  # Send selected action to game
 
-            frameStackNew = numpy.append(frame, frameStack[:, :, 0:3], axis=2)  # Append framestack to new frame
+            if localScore > 0: print("Reward: " + str(localScore) + '  Epsilon: ' + str(epsilon))
+            elif localScore < -500: print("Negative Reward: " + str(localScore))
+
+            # Reshape so that we can store each 50x50 image as a 3D numpy array
+            frame = numpy.reshape(frame, (50, 50, 1))
+
+            # Append first 3 50x50 pictures stored in framestack on new index (oldest frame = 0th index)
+            frameStackNew = numpy.append(frame, frameStack[:, :, 0:3], axis=2)
+
             # frameStack = previous stack of frames, action = taken action, localScore = change in score (reward), frameStackNew = updated stack of frames, localTerminal = is game over?
             replayMemory.append((frameStack, action, localScore, frameStackNew, localTerminal))  # Store transition in replay memory as a tuple
 
@@ -579,9 +629,31 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
                 replayMemory.popleft()
 
         if cycleCounter > OBSERVE and len(replayMemory) >= BATCH_SIZE:
-            # Sample miniBatch
-            minibatch = random.sample(replayMemory, BATCH_SIZE)  # Get BATCH_SIZE random samples from replayMemory
+            # Get minibatch
+            minibatch = random.sample(replayMemory, int(BATCH_SIZE))  # Use for random sampling
+            
+            #prioritizedReplay = []
+            #prioritizedReplay2 = []
+            # Get indices where lines have been cleared and high rewards that are not the first piece in a new game (start at 1000)
+            #for i in range(0, len(replayMemory)):
+            #    if replayMemory[i][2] > 1000:
+            #        prioritizedReplay.append(replayMemory[i])  # Use for tracking indices
+            #        prioritizedReplay2.append(replayMemory[i][2])  # Use for finding highest reward
 
+            #prioritizedReplayPaddingSize = int(BATCH_SIZE - len(prioritizedReplay2))
+            #print(prioritizedReplayPaddingSize)
+            #largestIndices = numpy.argpartition(prioritizedReplay2, BATCH_SIZE - prioritizedReplayPaddingSize)[BATCH_SIZE - prioritizedReplayPaddingSize:]  # Get indices of top 32 rewards
+            #minibatch2 = []
+            
+            #for x in range(0, len(largestIndices)):
+            #    minibatch2.append(prioritizedReplay[largestIndices[x]])  # Append full replay to minibatch2 (rather than just the reward)
+            #    print(prioritizedReplay[largestIndices[x][2]])
+            
+            #minibatch1 = random.sample(replayMemory, prioritizedReplayPaddingSize)  # Fill minibatch with random samples if not enough lines have been cleared
+                
+            #minibatch = minibatch1 + minibatch2  # Combine the minibatches so it's half random, half highest reward
+            #minibatch = minibatch2  # Use for 100% prioritized experience replay.
+            
             # Get batch variables
             initialFrameBatch = [r[0] for r in minibatch]
             actionBatch = [r[1] for r in minibatch]
@@ -597,19 +669,31 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
                 else:  # Otherwise append the score + GAMMA * the max value in the new Q Values for the updated frames
                     yBatch.append(scoreBatch[i] + GAMMA * numpy.max(batchReadout[i]))
 
-            # Perform training step by feeding trainingStep
+            # Perform training step by feeding ADAM optimizer the actions for the scores (label)according to the corresponding 
             trainingStep.run(feed_dict={y: yBatch,
                                         a: actionBatch,
                                         inputLayer: initialFrameBatch})
 
-
         frameStack = frameStackNew  # Update Framestack
         cycleCounter += 1
 
+        if (cycleCounter % 1000 == 0):
+            trainingTime += (datetime.datetime.now() - startTime)
+            print('Frame: ' + str(cycleCounter) + '  Q-Values: ' + str(readoutEvaluated))
+            print('Training Time: ' + str(trainingTime))
 
+        gameParameters = []
         # Save network every 5000 steps
-        if cycleCounter % 5000 == 0:
+        if cycleCounter % 10000 == 0:
             saver.save(sess, 'savedNetworks/Tetris-dqn', global_step=cycleCounter)  # Save to directories savedNetworks folder
+            numpy.save('replayMemory', replayMemory)
+            gameParameters.append(score)
+            gameParameters.append(linesCleared)
+            gameParameters.append(MAX_REWARD)
+            gameParameters.append(gamesPlayed)
+            gameParameters.append(datetime.datetime.now() - startTime)  # Save the running time for this training
+            gameParameters = numpy.array(gameParameters)  # Convert to numpy array for saving
+            numpy.save('gameStatistics', gameParameters)
 
 if __name__ == "__main__":
     sess = tf.InteractiveSession()
