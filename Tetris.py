@@ -14,7 +14,6 @@ import random
 import time
 from PIL import Image
 from copy import deepcopy
-import datetime
 
 pygame.init()
 pygame.mixer.init()
@@ -34,8 +33,6 @@ newBoard = []
 gamesPlayed = 0
 FONT_PATH = "C:\Windows\Fonts\Arial.ttf"  # Use C:\Windows\Fonts\Arial.ttf for Windows, /System/Library/Fonts/Helvetica.dfont for Mac.
 FONT = pygame.font.Font(FONT_PATH, 12)
-
-startTime = datetime.datetime.now()
 
 class Piece:
     O = (((0, 0, 0, 0, 0),  (0, 0, 0, 0, 0),  (0, 0, 1, 1, 0),  (0, 0, 1, 1, 0),  (0, 0, 0, 0, 0)), ) * 4  # Square Tetromino
@@ -113,7 +110,7 @@ class Board:
         for i in range(self.height):
             for j in range(self.width):
                 if newBoard[i][j] is not self.board[i][j] and i != 0:
-                    thetaBoard[i][j] = (1 / i) * 50  # Where there has been a change, set index to value
+                    thetaBoard[i][j] = (1 / i) * 60  # Where there has been a change, set index to value
 
         # Create copy by value, not reference
         newBoard = deepcopy(self.board)
@@ -130,7 +127,7 @@ class Board:
             label = FONT.render("Max Reward: " + str(MAX_REWARD), 1, white, black)
             self.surface.blit(label, (0, 530))
 
-        score += round(thetaScore)  # Keep track of total reward earned
+        score += round(thetaScore / 30)
         reward = thetaScore
         
         label = FONT.render("Score: " + str(score),  1, white, black)
@@ -227,7 +224,7 @@ class Board:
         global thetaScore, linesCleared, FONT
         remove = [y for y, row in enumerate(self.board) if all(row)]
         if len(remove) > 0:
-            thetaScore += len(remove) * 10000  # 10000 reward per line cleared
+            thetaScore += len(remove) * 1000  # 1000 reward per line cleared
             linesClearedSound.play()  # Play sound!
             # Update GUI
             linesCleared += len(remove)
@@ -352,7 +349,7 @@ class Tetris:
         if terminal:
             terminal = False
 
-        # Do nothing[0], rotate right[1], rotate left[2], move left[3], move right [4], drop piece to bottom[5].
+        # Do nothing[0], move left[1], rotate left[2], move left[3], move right [4], drop piece to bottom[5].
         if agentInput[1] == 1:
             self.board.move_piece(-1, 0)
         elif agentInput[2] == 1:
@@ -415,7 +412,7 @@ class Tetris:
         # Set-up variables and defaults for game...
         global level, score
         pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
-        pygame.display.set_caption("Tetris V4.0")  # Set window title
+        pygame.display.set_caption("Tetris V4.1")  # Set window title
 
 def playGame(Tetris):
     Tetris.run()
@@ -426,11 +423,13 @@ def playGame(Tetris):
 # Hyperparameters
 ACTIONS = 5  # Do nothing[0], rotate right[1], rotate left[2], move left[3], move right [4], drop piece to bottom[5].
 INIT_EPSILON = 1  # Starting epsilon (for exploring). This will make the agent start by choosing an exploring action constantly.
-FINAL_EPSILON = 0.03  # Final epsilon (final % chance to take an exploring action)
+FINAL_EPSILON = 0.01  # Final epsilon (final % chance to take an exploring action)
 OBSERVE = 25000  # Observe game for 10000 frames. This fills the replay memory before the agent can take action
-REPLAY_MEMORY = 25000  # Size of ReplayMemory
+REPLAY_MEMORY = OBSERVE  # Size of ReplayMemory is equal to Observe because we need to populate the replaymemory before we can train from it
 BATCH_SIZE = 32  # Size of minibatch
-GAMMA = 0.02 # Decay rate of past observations
+GAMMA = 0.02  # Decay rate of past observations
+LOGGING = True  # Set to True to enable logging of Q-Values. .txt files will be required in the same directory as the .py file. See documentation for file names.
+LOGGING_FREQ = 1000  # How often to save to logs (so 1,000 = every 1,000 frames, write to log once)
 
 tetrisObject = Tetris()  # Create new Tetris instance
 
@@ -504,11 +503,9 @@ def createNetwork():
     return input, readout, hiddenFullyConnceted
 
 def trainNetwork(inputLayer, readout, fullyConnected, sess):
-    global tetrisObject, debugCounter, score, linesCleared, MAX_REWARD, gamesPlayed, FONT, startTime
+    global tetrisObject, debugCounter, score, linesCleared, MAX_REWARD, gamesPlayed, FONT
     epsilon = 0
     cycleCounter = 0
-
-    trainingTime = datetime.datetime.now()
 
     printOutActions = {0 : "Do Nothing", 1 : "Rotate Right", 2 : "Rotate Left", 3 : "Move Left", 4 : "Move Right", 5 : "Drop Piece"}
     # inputLayer is the inputLayer (duh), hiddenFullyConnected is the fully connected ReLU layer (second to last layer),
@@ -548,17 +545,14 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
         linesCleared = gameParametersLoad[1]
         MAX_REWARD = gameParametersLoad[2]
         gamesPlayed = gameParametersLoad[3]
-        #trainingTime += gameParametersLoad[4]
 
         # Update GUI
         label = FONT.render("Max Reward: " + str(MAX_REWARD), 1, white, black)
         tetrisObject.surface.blit(label, (0, 530))
         label = FONT.render("Score: " + str(score),  1, white, black)
         tetrisObject.surface.blit(label, (0,  510))
-        label = FONT.render('Games Played: ' + str(gamesPlayed), 1, white, black)
+        label = FONT.render('Games Played: ' + str(gamesPlayed), 1, (255, 255, 255), (0, 0, 0))
         tetrisObject.surface.blit(label, (125, 530))
-        label = FONT.render("Lines cleared: " + str(linesCleared), 1, white, black)
-        tetrisObject.surface.blit(label, (125, 510))
 
         # Restore replayMemory and set network hyperparameters as if we were done observing/exploring
         replayMemory = numpy.load('replayMemory.npy')
@@ -588,14 +582,14 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
 
         # Explore / Exploit decision
         if random.random() <= epsilon or tetrisObject.frameNumber <= OBSERVE:  # If we should explore...
-            print("Exploring!")
+            #print("Exploring!")
             # Choose action randomly
             chosenAction = random.randint(0, len(action))  # Choose random action from list of actions..
             if chosenAction == len(action):
                 chosenAction = chosenAction - 1  # Prevents index out of bounds as len(action) is non-zero indexed while lists are zero-indexed
             action[chosenAction] = 1  # Set that random action to 1 (for true)
         else:
-            print("Exploiting!")
+            #print("Exploiting!")
             # Choose action greedily
             chosenAction = numpy.argmax(readoutEvaluated)  # Set chosenAction to the index of the largest Q-value
             action[chosenAction] = 1  # Set the largest "action" to true
@@ -605,15 +599,16 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
 
         # Scale Epsilon if done observing
         if epsilon > FINAL_EPSILON and cycleCounter > OBSERVE:  # If epsilon is not final and we're done observing...
-            epsilon -= 0.0002  # Subtract 0.002 from epsilon. This will reduce 2% from epsilon every 1000 timesteps...
+            epsilon -= 0.000002  # Subtract 0.000002 from epsilon.
 
         # Run once per frame. This will send the selected action to the game and give us our reward and then train the agent with our minibatch.
         for i in range(0, 1):
             # Run selected action and observe the reward
             frame, localScore, localTerminal = tetrisObject.handle_input(agentInput=action)  # Send selected action to game
 
-            if localScore > 0: print("Reward: " + str(localScore) + '  Epsilon: ' + str(epsilon))
-            elif localScore < -500: print("Negative Reward: " + str(localScore))
+            # Uncomment to print reward every new piece
+            #if localScore > 0: print("Reward: " + str(localScore) + '  Epsilon: ' + str(epsilon))
+            #elif localScore < -500: print("Negative Reward: " + str(localScore))
 
             # Reshape so that we can store each 50x50 image as a 3D numpy array
             frame = numpy.reshape(frame, (50, 50, 1))
@@ -629,30 +624,20 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
                 replayMemory.popleft()
 
         if cycleCounter > OBSERVE and len(replayMemory) >= BATCH_SIZE:
-            # Get minibatch
-            minibatch = random.sample(replayMemory, int(BATCH_SIZE))  # Use for random sampling
+            # Sample miniBatch using prioritized replay (only where lines have been cleared)
             
-            #prioritizedReplay = []
-            #prioritizedReplay2 = []
-            # Get indices where lines have been cleared and high rewards that are not the first piece in a new game (start at 1000)
-            #for i in range(0, len(replayMemory)):
-            #    if replayMemory[i][2] > 1000:
-            #        prioritizedReplay.append(replayMemory[i])  # Use for tracking indices
-            #        prioritizedReplay2.append(replayMemory[i][2])  # Use for finding highest reward
+            prioritizedReplay = []
+            prioritizedReplay2 = []
+            # Get indices where reward is largest
+            for i in range(0, len(replayMemory)):
+                if replayMemory[i][2] > 10000 and len(prioritizedReplay) <= 31:
+                    prioritizedReplay.append(replayMemory[i])  # Use for tracking indices
 
-            #prioritizedReplayPaddingSize = int(BATCH_SIZE - len(prioritizedReplay2))
-            #print(prioritizedReplayPaddingSize)
-            #largestIndices = numpy.argpartition(prioritizedReplay2, BATCH_SIZE - prioritizedReplayPaddingSize)[BATCH_SIZE - prioritizedReplayPaddingSize:]  # Get indices of top 32 rewards
-            #minibatch2 = []
-            
-            #for x in range(0, len(largestIndices)):
-            #    minibatch2.append(prioritizedReplay[largestIndices[x]])  # Append full replay to minibatch2 (rather than just the reward)
-            #    print(prioritizedReplay[largestIndices[x][2]])
-            
-            #minibatch1 = random.sample(replayMemory, prioritizedReplayPaddingSize)  # Fill minibatch with random samples if not enough lines have been cleared
-                
-            #minibatch = minibatch1 + minibatch2  # Combine the minibatches so it's half random, half highest reward
-            #minibatch = minibatch2  # Use for 100% prioritized experience replay.
+            if len(prioritizedReplay) < 32:
+                minibatch1 = random.sample(replayMemory, int(BATCH_SIZE - len(prioritizedReplay)))  # Fill in extra samples randomly
+                minibatch = minibatch1 + prioritizedReplay
+            else:
+                minibatch = prioritizedReplay
             
             # Get batch variables
             initialFrameBatch = [r[0] for r in minibatch]
@@ -677,10 +662,21 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
         frameStack = frameStackNew  # Update Framestack
         cycleCounter += 1
 
-        if (cycleCounter % 1000 == 0):
-            trainingTime += (datetime.datetime.now() - startTime)
+        if (cycleCounter % LOGGING_FREQ == 0):
             print('Frame: ' + str(cycleCounter) + '  Q-Values: ' + str(readoutEvaluated))
-            print('Training Time: ' + str(trainingTime))
+            if LOGGING:
+                doNothingValues = open('doNothingValues.txt', 'a')
+                doNothingValues.write('\n' + str(readoutEvaluated[0]))
+                moveLeftValues = open('moveLeftValues.txt', 'a')
+                moveLeftValues.write('\n' + str(readoutEvaluated[1]))
+                rotateLeftValues = open('rotateLeftValues.txt', 'a')
+                rotateLeftValues.write('\n' + str(readoutEvaluated[2]))
+                moveRightValues = open('moveRightValues.txt', 'a')
+                moveRightValues.write('\n' + str(readoutEvaluated[3]))
+                rotateRightValues = open('rotateRightValues.txt', 'a')
+                rotateRightValues.write('\n' + str(readoutEvaluated[4]))
+            
+            
 
         gameParameters = []
         # Save network every 5000 steps
@@ -691,10 +687,8 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
             gameParameters.append(linesCleared)
             gameParameters.append(MAX_REWARD)
             gameParameters.append(gamesPlayed)
-            gameParameters.append(datetime.datetime.now() - startTime)  # Save the running time for this training
             gameParameters = numpy.array(gameParameters)  # Convert to numpy array for saving
             numpy.save('gameStatistics', gameParameters)
-            
 
 if __name__ == "__main__":
     sess = tf.InteractiveSession()
