@@ -415,7 +415,7 @@ class Tetris:
         # Set-up variables and defaults for game...
         global level, score
         pygame.time.set_timer(Tetris.DROP_EVENT, (750 - ((level - 1) * 50)))  # Controls how often blocks drop. Each level-up takes 50ms off
-        pygame.display.set_caption("Tetris V4.1")  # Set window title
+        pygame.display.set_caption("Tetris V4.0")  # Set window title
 
 def playGame(Tetris):
     Tetris.run()
