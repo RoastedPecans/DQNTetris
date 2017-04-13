@@ -19,25 +19,25 @@ linesClearedSound = pygame.mixer.Sound("dingSoundEffect.wav")
 
 # Global Variables for Tetris
 score = 0  # Total score
-thetaScore = 1000  # Keep track of changes in score (used to reward agent)
+thetaScore = 2000 # Keep track of changes in score (used to reward agent)
 terminal = False  # Flag for GameOver
 linesCleared = 0
 MAX_REWARD = 0
 reward = 0
 newBoard = []
 gamesPlayed = 0
-FONT_PATH = "/System/Library/Fonts/Helvetica.dfont"  # Use C:\Windows\Fonts\Arial.ttf for Windows, /System/Library/Fonts/Helvetica.dfont for Mac.
+FONT_PATH = "C:\Windows\Fonts\Arial.ttf"  # Use C:\Windows\Fonts\Arial.ttf for Windows, /System/Library/Fonts/Helvetica.dfont for Mac.
 FONT = pygame.font.Font(FONT_PATH, 12)  # Create a single object for rendering all text in game to save computation
 
 # Parameters for DQN
 ACTIONS = 5  # Do nothing[0], move left[1], rotate left[2], move left[3], move right [4].
 INIT_EPSILON = 1  # Starting epsilon (for exploring). This will make the agent start by choosing a random action constantly.
-FINAL_EPSILON = 0.001  # Final epsilon (final % chance to take an exploring action)
+FINAL_EPSILON = 0.01  # Final epsilon (final % chance to take an exploring action)
 OBSERVE = 20000  # Observe game for x frames. This fills the replay memory before the agent can begin training.
 REPLAY_MEMORY = OBSERVE  # Size of ReplayMemory is equal to Observe because we need to populate the replaymemory before we can train from it.
 BATCH_SIZE = 64  # Size of minibatch to use in training
-GAMMA = 0.9  # Decay rate of past observations. Used in Q-Learning equation and dictates whether to aim for future rewards or short-sighted rewards.
-LOGGING = False  # Set to True to enable logging of when a line is cleared. timeToScore.txt will be needed in .py directory.
+GAMMA = 0.95  # Decay rate of past observations. Used in Q-Learning equation and dictates whether to aim for future rewards or short-sighted rewards.
+LOGGING = True  # Set to True to enable logging of when a line is cleared. timeToScore.txt will be needed in .py directory.
 
 # Tetris game code originally from https://github.com/ktt3ja/kttetris/blob/master/tetris.py.
 # Modified for use with a Deep-Q Network.
@@ -127,7 +127,7 @@ class Board:
         for i in range(self.height):
             for j in range(self.width):
                 if newBoard[i][j] is not self.board[i][j] and i != 0:
-                    thetaBoard[i][j] = (1 / i) * 60  # Where there has been a change, set index to value
+                    thetaBoard[i][j] = (1 / i) * 60 # Where there has been a change, set index to value
 
         # Create copy by value, not reference
         newBoard = deepcopy(self.board)
@@ -322,7 +322,7 @@ class Board:
         global terminal, newBoard, FONT, gamesPlayed, thetaScore
         terminal = True  # Set to True to punish agent in Tetris.handle_input() by reducing reward
         self.firstPiece = True  # Since it's a new game, let us know that it's the first piece
-        thetaScore = 1000  # Reset reward
+        thetaScore = 2000  # Reset reward
         gamesPlayed += 1
 
         # Update GUI
@@ -338,7 +338,8 @@ class Board:
 
 
 class Tetris:
-
+    rewardCounter = 3
+    gameOverCounter = 3 # Set to 3 since subtraction is first
     def __init__(self):
         self.surface = pygame.display.set_mode((250, 550))  # Set dimensions of game window. Creates a Surface
         self.clock = pygame.time.Clock()  # Create game clock
@@ -353,11 +354,15 @@ class Tetris:
         
         # Before running action set terminal (game over) to False so we don't get any errors
         if terminal:
-            terminal = False
+            self.gameOverCounter -= 1
+            if self.gameOverCounter == 0:
+                terminal = False
+                self.gameOverCounter = 3
+                reward += 10000
 
         # If we cleared a piece last frame, get rid of the extra reward so we don't reward non line-clearing moves
         if self.board.clearedPiece:
-            thetaScore -= 10000
+            reward -= 10000
             self.board.clearedPiece = False
         
         # Do nothing[0], move left[1], rotate left[2], move left[3], move right [4].
@@ -397,10 +402,10 @@ class Tetris:
         self.clock.tick(60)  # Set game speed
 
         # After running action see if gameOver is true
-        if terminal:
+        if terminal and self.gameOverCounter == 2:
             reward = -10000
             score -= 10000
-
+            
         # Pausing functionality...
         running = False
         events = pygame.event.get()
@@ -621,7 +626,7 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
             
             # Print out reward received
             if localScore > 0 and localScore2 != localScore: print("Reward: " + str(localScore) + '  Epsilon: ' + str(epsilon))
-            elif localScore < -500 and localScore2 != localScore: print("Reward: " + str(localScore))
+            elif localScore < -500: print("Reward: " + str(localScore))
             
             # Reshape so that we can store each 25x50 image as a 3D numpy array  (neural network swaps dimensions)
             frame = numpy.reshape(frame, (50, 25, 1))
@@ -631,8 +636,8 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
             frameStackNew = numpy.append(frame, frameStack[:, :, 0:3], axis=2)
 
             # frameStack = previous stack of frames, action = taken action, localScore = change in score (reward), frameStackNew = updated stack of frames, localTerminal = if game over
-            if localScore2 != localScore:  # Only adds experience if last piece is at bottom and new piece has not been generated yet so we don't confuse agent
-                replayMemory.append((frameStack, action, localScore, frameStackNew))  # Store transition in replay memory as a tuple
+            # Only adds experience if last piece is at bottom and new piece has not been generated yet so we don't confuse agent
+            replayMemory.append((frameStack, action, localScore, frameStackNew))  # Store transition in replay memory as a tuple
 
             localScore2 = localScore
             
@@ -668,6 +673,10 @@ def trainNetwork(inputLayer, readout, fullyConnected, sess):
             
         frameStack = frameStackNew  # Update Framestack
         cycleCounter += 1
+
+        if cycleCounter % 1000 == 0:
+            file = open('maxReward.txt', 'a')
+            file.write('\n' + str(MAX_REWARD) + '      ' + str(cycleCounter))
 
         # Uncomment to print the frame we're on and the Q-Values for the current game state
         #print('Frame: ' + str(cycleCounter) + '  Q-Values: ' + str(readoutEvaluated))
